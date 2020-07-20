@@ -6,6 +6,7 @@ from scipy import sparse
 import scipy.sparse as sparse
 from scipy.sparse import data
 from copy import deepcopy
+from utils import check_close_to_zero
 
 class ALS:
     
@@ -35,7 +36,8 @@ class ALS:
             v_hat = self.M * self.v.T
             # compute 
             self.u = _compute_minimizer(v_hat, self.X.T)
-
+            # debug
+            print(np.linalg.norm(_compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)))
         # *** minimize wrt v ***
             # this time u_hat will have j-th *column* corresponding to \hat{u}_j since u represents users
             u_hat = self.M * self.u     # note self.u was just minimized above
@@ -50,6 +52,8 @@ class ALS:
             # compute gradient of u after v was updated (grad_v is zero here)
             v_hat = self.M * self.v.T
             grad_u = _compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)
+            # debug
+            print(np.linalg.norm(_compute_gradient_vectorized(np.ascontiguousarray(u_hat.T), np.asfortranarray(self.X), self.v, self.u)))
 
             # bookkeeping
             counter += 1
@@ -58,7 +62,7 @@ class ALS:
         return self.u, self.v
 
     def log_stats(self, grad_u, grad_v, iteration):
-        print('\nIteration\tFunction Eval (Loss)\tCurrent grad_u\t\t\tPrev grad_v\t')
+        print('\nIteration\tFunction Eval (Loss)\t\tCurrent ||grad_u||\t\tPrev ||grad_v||\t')
         print(f'[{iteration}]\t\t{self.function_eval()}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
@@ -72,7 +76,9 @@ def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray)->np.ndarray:
     for i in range(hat_vect_matrix.shape[0]):
         minimizer[i] = hat_vect_matrix[i, :] @ X[:, i]#.astype(hat_vect_matrix.dtype)
         # divide by norm_2 squared
-        minimizer[i] /= hat_vect_matrix[i] @ hat_vect_matrix[i] 
+        norm = hat_vect_matrix[i] @ hat_vect_matrix[i] 
+        if norm > 1e-16:
+            minimizer[i] /= norm
 
     return minimizer
 
@@ -115,14 +121,15 @@ class ALSSparse:
             v_hat = self.M * sparse_v
             # compute minimizer wrt u
             self.u = _compute_sparse_minimizer(v_hat, self.X)
-
+            # debug
+            print(np.linalg.norm(_compute_sparse_gradient_vectorized(v_hat, self.X, self.u, self.v)))
         # *** minimize wrt v ***
             # this time u_hat will have j-th *column* corresponding to \hat{u}_j since u represents users
             sparse_u = sparse.lil_matrix((self.u.shape[0], self.u.shape[0]), dtype=self.u.dtype)
             sparse_u.setdiag(self.u)
             u_hat = sparse_u * self.M     # note self.u was just minimized above
             # optional: check gradient of v
-            grad_v = _compute_sparse_gradient_vectorized(u_hat.T, self.X, self.v, self.u)
+            grad_v = _compute_sparse_gradient_vectorized(u_hat.T, self.X.T, self.v, self.u)
             # compute minimizer wrt v
             self.v = _compute_sparse_minimizer(u_hat.T, self.X.T)
             
@@ -131,8 +138,10 @@ class ALSSparse:
             # compute gradient of u after v was updated (grad_v is zero here)
             sparse_v.setdiag(self.v)
             v_hat = self.M * sparse_v
-            grad_u = _compute_sparse_gradient_vectorized(v_hat, self.X.T, self.u, self.v)
-
+            grad_u = _compute_sparse_gradient_vectorized(v_hat, self.X, self.u, self.v)
+            
+            # debug
+            print(np.linalg.norm(_compute_sparse_gradient_vectorized(u_hat.T, self.X.T, self.v, self.u)))
             # bookkeeping
             counter += 1
             self.log_stats(grad_u, grad_v, counter)
@@ -140,7 +149,7 @@ class ALSSparse:
         return self.u, self.v
 
     def log_stats(self, grad_u, grad_v, iteration):
-        print('\nIteration\tFunction Eval (Loss)\tCurrent grad_u\t\t\tPrev grad_v\t')
+        print('\nIteration\tFunction Eval (Loss)\t\tCurrent ||grad_u||\t\tPrev ||grad_v||\t')
         print(f'[{iteration}]\t\t{self.function_eval()}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
@@ -149,40 +158,46 @@ class ALSSparse:
 
 
 def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix)->np.ndarray:
+    # TODO: explain elemntwise+sum form
     # compute numerator part of minimizer, this will yield a dense vector (size of u or v)
-    minimizer = (hat_vect_matrix.multiply(X)).astype(hat_vect_matrix.dtype).sum(axis=1)
+    minimizer = (hat_vect_matrix.multiply(X)).sum(axis=1)
     # divide by norm squared of masked vector
-    vector_of_norms = (hat_vect_matrix.multiply(hat_vect_matrix)).astype(hat_vect_matrix.dtype).sum(axis=1)
+    vector_of_norms = (hat_vect_matrix.multiply(hat_vect_matrix)).sum(axis=1)
     # if some norm is 0 numerator will be 0 too
-    vector_of_norms[vector_of_norms==0] = 1
+    vector_of_norms[vector_of_norms<1e-8] = 1
     minimizer = minimizer / vector_of_norms
+    # return np.ndarray representation
+    return minimizer.A
 
-    return minimizer
-# TODO: sparse impl with no numba
+
 def _compute_sparse_gradient_vectorized(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix, z:np.ndarray, y:np.ndarray)->np.ndarray:
-    grad_z = np.zeros(z.shape[0]).reshape(-1, 1).astype(z.dtype)
-    for i in range(hat_vect_matrix.shape[0]):
-        # exploit dot product with sparse matrix, tho second term will be dense
-        grad_z[i] = hat_vect_matrix[i] @ (z[i] * y - X[:, i]).astype(z.dtype)
-
-    return grad_z
+    # exploit product with sparse matrix, tho second term will be dense
+    grad_z = (hat_vect_matrix.multiply(z @ y.T - X)).sum(axis=1)
+    return grad_z.A
 
 if __name__ == "__main__":
-    u = np.arange(10).astype(np.float32).reshape(10, 1)
-    v = np.arange(3).astype(np.float32).reshape(3, 1)
-    X = (np.random.randn(10, 3)**2).astype(np.float32)
+    u = np.random.randn(10).astype(np.float32).reshape(-1, 1)
+    v = np.random.randn(3).astype(np.float32).reshape(-1, 1)
+    # X = (np.random.randn(10, 3)**2).astype(np.float32)
+    X = sparse.random(10, 3, density=.4, dtype=np.float32).power(2).toarray()
     hat = np.random.randn(10, 3).astype(np.float32)
     # print(_compute_minimizer(np.ascontiguousarray(hat.T), np.asfortranarray(X)))
     als = ALS(u, v, X)
     als.fit(max_iter=10)
 
     print('**SPARSE IMPLEMENTATION**')
-    u = np.arange(10).astype(np.float32).reshape(10, 1)
-    v = np.arange(3).astype(np.float32).reshape(3, 1)
-    X = sparse.random(10, 3, dtype=np.uint8).power(2).tocsr()
+    u = np.random.randn(10).astype(np.float32).reshape(-1, 1)
+    v = np.random.randn(3).astype(np.float32).reshape(-1, 1)
+    X_float = sparse.random(10, 3, density=.4, dtype=np.float32).power(2).tocsr() * 10
+    X_int = sparse.csr_matrix(X_float, dtype=np.uint8)
+    print(X_float, X_int)
     hat = np.random.randn(10, 3).astype(np.float32)
-    # print(_compute_minimizer(np.ascontiguousarray(hat.T), np.asfortranarray(X)))
-    als = ALSSparse(u, v, X)
+    als = ALSSparse(u, v, X_float)
+    als.fit(max_iter=10)
+
+    u = np.random.randn(10).astype(np.float32).reshape(-1, 1)
+    v = np.random.randn(3).astype(np.float32).reshape(-1, 1)
+    als = ALSSparse(u, v, X_int)
     als.fit(max_iter=10)
 
 
