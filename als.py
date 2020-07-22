@@ -58,7 +58,7 @@ class ALS:
             # bookkeeping
             counter += 1
             self.log_stats(grad_u, grad_v, counter)
-        
+            print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
         return self.u, self.v
 
     def log_stats(self, grad_u, grad_v, iteration):
@@ -103,7 +103,7 @@ class ALSSparse:
         self.M = sparse.csr_matrix(dataset, dtype=np.bool)
 
     
-    def fit(self, eps_g:float = 1e-8, eps_params:float = 1e-14, max_iter=1000) -> np.ndarray:
+    def fit(self, eps_g:float = 1e-8, eps_params:float = 1e-10, max_iter=1000) -> np.ndarray:
         grad_u = np.ones(self.u.shape[0]) * np.inf
         grad_v = np.ones(self.v.shape[0]) * np.inf
         theta_dim = self.u.shape[0] + self.v.shape[0]
@@ -145,7 +145,8 @@ class ALSSparse:
             # bookkeeping
             counter += 1
             self.log_stats(grad_u, grad_v, counter)
-        
+            print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
+
         return self.u, self.v
 
     def log_stats(self, grad_u, grad_v, iteration):
