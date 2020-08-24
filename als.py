@@ -1,12 +1,10 @@
 import numpy as np
-from numpy.core.defchararray import count
-from numpy.core.records import ndarray
 from numba import njit
 from scipy import sparse
 import scipy.sparse as sparse
-from scipy.sparse import data
 from copy import deepcopy
 from utils import check_close_to_zero
+import time
 
 class ALS:
     
@@ -18,15 +16,19 @@ class ALS:
         # compute mask from X
         self.M = (np.ones_like(dataset) * dataset).astype(np.bool)
 
+        self.fun_eval_times = []
+        self.stats = {}
+
     # TODO: mention all ops are vectorized for efficiency in report leveraging blas
     # TODO: specify cost of each operation
-    def fit(self, eps_g:float = 1e-8, eps_params:float = 1e-14, max_iter=1000) -> np.ndarray:
+    def fit(self, eps_g:float = 1e-8, eps_params:float = 1e-10, max_iter=1000) -> np.ndarray:
         grad_u = np.ones(self.u.shape[0]) * np.inf
         grad_v = np.ones(self.v.shape[0]) * np.inf
         theta_dim = self.u.shape[0] + self.v.shape[0]
         latest_theta = np.ones(theta_dim) * np.inf
         theta = -latest_theta
         counter = 0
+        start_time = time.time()
 
         # stopping condition: only check grad_u here since grad_v will be 0 from latest update 
         while np.linalg.norm(grad_u) > eps_g and np.linalg.norm(theta - latest_theta) > eps_params and counter < max_iter:
@@ -59,19 +61,40 @@ class ALS:
             counter += 1
             self.log_stats(grad_u, grad_v, counter)
             print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
+
+        end_time = time.time()
+        print(f"Estimated average iteration runtime: {(end_time - start_time)/counter}s")
+        self.register_stats(end_time - start_time, counter, grad_u, np.linalg.norm(theta - latest_theta))
+        print(f"Estimated average function evaluation times: {self.stats['avg_fun_eval_time']}")
         return self.u, self.v
 
     def log_stats(self, grad_u, grad_v, iteration):
         print('\nIteration\tFunction Eval (Loss)\t\tCurrent ||grad_u||\t\tPrev ||grad_v||\t')
-        print(f'[{iteration}]\t\t{self.function_eval()}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
+        start = time.time()
+        fun_eval = self.function_eval()
+        self.fun_eval_times.append(time.time() - start)
+        print(f'[{iteration}]\t\t{fun_eval}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
         return np.sum((self.u @ self.v.T * self.M - self.X)**2)
+
+    def register_stats(self, runtime:float, n_iters:int, final_grad:np.ndarray, theta_diff:float):
+        self.stats['avg_iter_time'] = runtime/n_iters
+        self.stats['total_convergence_time'] = runtime
+        self.stats['avg_fun_eval_time'] = sum(self.fun_eval_times)/len(self.fun_eval_times)
+        self.stats['num_iterations'] = n_iters
+        self.stats['grad_u_norm'] =  np.linalg.norm(final_grad)
+        self.stats['theta_diff_norm'] = theta_diff
 
 # TODO: explain numba, no python code here
 @njit
 def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray)->np.ndarray:
     # TODO: explain why it is efficient in report too (O(mn))
+    # minimizer = np.sum(hat_vect_matrix*X.T , axis=1)
+    # vect_of_norms = (hat_vect_matrix * hat_vect_matrix).sum(axis=1)
+    # vect_of_norms[vect_of_norms<1e-8] = 1
+    # return (minimizer/vect_of_norms).reshape(-1, 1)
+
     minimizer = np.zeros(hat_vect_matrix.shape[0]).reshape(-1, 1).astype(hat_vect_matrix.dtype)
     for i in range(hat_vect_matrix.shape[0]):
         minimizer[i] = hat_vect_matrix[i, :] @ X[:, i]#.astype(hat_vect_matrix.dtype)
@@ -84,6 +107,9 @@ def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray)->np.ndarray:
 
 @njit
 def _compute_gradient_vectorized(hat_vect_matrix: np.ndarray, X: np.ndarray, z:np.ndarray, y:np.ndarray)->np.ndarray:
+    # z = z.reshape(-1, 1)
+    # grad_z = (hat_vect_matrix * (z @ y.T - X.T)).sum(axis=1)
+    # return grad_z.reshape(-1, 1)
     grad_z = np.zeros(z.shape[0]).reshape(-1, 1).astype(z.dtype)
     for i in range(hat_vect_matrix.shape[0]):
         # make sure X it's a col vector otherwise it will broadcast '-' operation
@@ -101,7 +127,9 @@ class ALSSparse:
         self.X = dataset
         # compute mask from X maintainig sparse format
         self.M = sparse.csr_matrix(dataset, dtype=np.bool)
-
+        
+        self.fun_eval_times = []
+        self.stats = {}
     
     def fit(self, eps_g:float = 1e-8, eps_params:float = 1e-10, max_iter=1000) -> np.ndarray:
         grad_u = np.ones(self.u.shape[0]) * np.inf
@@ -110,6 +138,7 @@ class ALSSparse:
         latest_theta = np.ones(theta_dim) * np.inf
         theta = -latest_theta
         counter = 0
+        start_time = time.time()
 
         # stopping condition: only check grad_u here since grad_v will be 0 from latest update 
         while np.linalg.norm(grad_u) > eps_g and np.linalg.norm(theta - latest_theta) > eps_params and counter < max_iter:
@@ -147,15 +176,32 @@ class ALSSparse:
             self.log_stats(grad_u, grad_v, counter)
             print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
 
+        end_time = time.time()
+        print(f"Estimated average iteration runtime: {(end_time-start_time)/counter}s")
+        self.register_stats(end_time - start_time, counter, grad_u, np.linalg.norm(theta - latest_theta))
+
+        print(f"Estimated average function evaluation times: {self.stats['avg_fun_eval_time']}")
+        
         return self.u, self.v
 
     def log_stats(self, grad_u, grad_v, iteration):
         print('\nIteration\tFunction Eval (Loss)\t\tCurrent ||grad_u||\t\tPrev ||grad_v||\t')
-        print(f'[{iteration}]\t\t{self.function_eval()}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
+        start = time.time()
+        fun_eval = self.function_eval()
+        self.fun_eval_times.append(time.time() - start)
+        print(f'[{iteration}]\t\t{fun_eval}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
         # TODO: function evaluation benefits greatly since will resolve to sparse operations-only
         return (self.M.multiply(self.u @ self.v.T) - self.X).power(2).sum()
+    
+    def register_stats(self, runtime:float, n_iters:int, final_grad:np.ndarray, theta_diff:float):
+        self.stats['avg_iter_time'] = runtime/n_iters
+        self.stats['total_convergence_time'] = runtime
+        self.stats['avg_fun_eval_time'] = sum(self.fun_eval_times)/len(self.fun_eval_times)
+        self.stats['num_iterations'] = n_iters
+        self.stats['grad_u_norm'] =  np.linalg.norm(final_grad)
+        self.stats['theta_diff_norm'] = theta_diff
 
 
 def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix)->np.ndarray:

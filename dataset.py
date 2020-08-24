@@ -11,21 +11,18 @@ class MovieLensDataset:
         self.n_users = n_users
         self.n_movies = n_movies
         # load dataset and build 'augmented' matrix UsersxMovies
-        # all args are expected to be >=0
+        # all args are expected to be >=0 (can contain non-integer ratings tho)
         print(f"Loading MovieLens dataset from {path} with mode {mode}..")
         self.movie_map = {}
+        self.inverse_movie_map = {}
         self.movie_counter = 0
+        self.movie_names = None
 
         with open(path) as csv_file:
             self.X = self._load_sparse(csv_file) if mode == 'sparse' else self._load_full(csv_file)
 
     def dataset(self):
         return self.X
-
-    def train_test_split(self, train_perc:int, test_perc:int):
-        # TODO: When splitting, you have to make sure movieId and userId both appear in training set
-        train_split = int(train_perc * self.X.shape[0] / 100.)
-        return self.X[:train_split, :], self.X[train_split:, :]
 
     def _movie_mapping(self, movie_id: str)->int:
         # estabilishes an enumeration mapping from global movieid defined
@@ -34,6 +31,7 @@ class MovieLensDataset:
             return self.movie_map[movie_id]
         else:
             self.movie_map[movie_id] = self.movie_counter
+            self.inverse_movie_map[self.movie_counter] = movie_id
             self.movie_counter += 1
             return self.movie_map[movie_id]
     
@@ -54,7 +52,7 @@ class MovieLensDataset:
 
         print(f'Processed {line_count} lines.')
         print(f"Augmented dataset of size {X.shape} (users x movies) correctly loaded")
-        print(f"Dataset contains {np.count_nonzero(X)} ratings ({(line_count-1)/(self.n_movies*self.n_users)}% matrix density)")
+        print(f"Dataset contains {np.count_nonzero(X)} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)")
         return X
 
     def _load_sparse(self, csv_file)->sparse.csr_matrix: 
@@ -79,8 +77,27 @@ class MovieLensDataset:
             line_count += 1
 
         print(f'Processed {line_count} lines.')
-        print(f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)}% matrix density)")
-        # TODO: explain re-scaling trick for float->int
+        print(f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)")
+        # TODO: explain re-scaling trick for float->int (save mem by mapping 4.5->5)
         return sparse.csr_matrix((data, (rows, cols)), shape=(self.n_users, self.n_movies), dtype=np.float64)
         
-    # TODO: map movieid to name
+    # Map internal movieid to actual movie title (retrieved from another file)
+    def get_movie_info(self, movie_id):
+        # load movies names just-in-time
+        if self.movie_names is None:
+            self.movie_names = self._load_movies_information('./data/movies.csv')
+
+        # get MovieLens/IMDB movie id
+        imdb_movie_id = self.inverse_movie_map[movie_id]
+        # get movie information
+        return self.movie_names[imdb_movie_id]
+
+    def _load_movies_information(self, path):
+        print(f"Loading information about movies from {path}..")
+        movie_names = {}
+        with open(path, 'r') as f:
+            csv_reader = csv.reader(f, delimiter=',')
+            for line_count, row in enumerate(csv_reader):
+                if line_count > 0:
+                   movie_names[row[0]] = {'title': row[1], 'genre':row[2] }
+        return movie_names       
