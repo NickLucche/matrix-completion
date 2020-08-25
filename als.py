@@ -9,7 +9,13 @@ import time
 class ALS:
     
     def __init__(self, u:np.ndarray, v:np.ndarray, dataset:np.ndarray ) -> None:
-        # TODO: assuming u = (m, 1) v = (n, 1). (augmented)dataset: m x n, m items n users (uint8)
+        """Alternating Least Squares using standard numpy vectors. 
+        Args:
+            u (np.ndarray): (mx1) users (column) vector
+            v (np.ndarray): (vx1) items (column) vector
+            dataset (np.ndarray): (mxn) augmented dataset, full matrix with zeros representing missing values.
+        """
+
         self.u = u
         self.v = v
         self.X = dataset
@@ -38,8 +44,10 @@ class ALS:
             v_hat = self.M * self.v.T
             # compute 
             self.u = _compute_minimizer(v_hat, self.X.T)
-            # debug
-            print(np.linalg.norm(_compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)))
+
+            # debug, grad should be ~0 here
+            # print(np.linalg.norm(_compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)))
+
         # *** minimize wrt v ***
             # this time u_hat will have j-th *column* corresponding to \hat{u}_j since u represents users
             u_hat = self.M * self.u     # note self.u was just minimized above
@@ -54,13 +62,16 @@ class ALS:
             # compute gradient of u after v was updated (grad_v is zero here)
             v_hat = self.M * self.v.T
             grad_u = _compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)
-            # debug
-            print(np.linalg.norm(_compute_gradient_vectorized(np.ascontiguousarray(u_hat.T), np.asfortranarray(self.X), self.v, self.u)))
+
+            # debug, grad should be ~0 here
+            # print(np.linalg.norm(_compute_gradient_vectorized(np.ascontiguousarray(u_hat.T), np.asfortranarray(self.X), self.v, self.u)))
 
             # bookkeeping
             counter += 1
             self.log_stats(grad_u, grad_v, counter)
-            print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
+
+            # debug: checking difference in thetas
+            # print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
 
         end_time = time.time()
         print(f"Estimated average iteration runtime: {(end_time - start_time)/counter}s")
@@ -85,6 +96,7 @@ class ALS:
         self.stats['num_iterations'] = n_iters
         self.stats['grad_u_norm'] =  np.linalg.norm(final_grad)
         self.stats['theta_diff_norm'] = theta_diff
+        self.stats['mse'] = self.function_eval()/np.count_nonzero(self.X)
 
 # TODO: explain numba, no python code here
 @njit
@@ -121,7 +133,12 @@ def _compute_gradient_vectorized(hat_vect_matrix: np.ndarray, X: np.ndarray, z:n
 class ALSSparse:
     
     def __init__(self, u:np.ndarray, v:np.ndarray, dataset: sparse.csr.csr_matrix) -> None:
-        # TODO: assuming u = (m, 1) v = (n, 1). (augmented)dataset: m x n, m items n users (uint8)
+        """Alternating Least Squares using scipy-based sparse vectors implementation. 
+        Args:
+            u (np.ndarray): (mx1) users (column) vector
+            v (np.ndarray): (vx1) items (column) vector
+            dataset (np.ndarray): (mxn) sparse dataset of ratings.
+        """
         self.u = u
         self.v = v
         self.X = dataset
@@ -150,8 +167,10 @@ class ALSSparse:
             v_hat = self.M * sparse_v
             # compute minimizer wrt u
             self.u = _compute_sparse_minimizer(v_hat, self.X)
-            # debug
-            print(np.linalg.norm(_compute_sparse_gradient_vectorized(v_hat, self.X, self.u, self.v)))
+
+            # debug, grad should be ~0 here
+            # print(np.linalg.norm(_compute_sparse_gradient_vectorized(v_hat, self.X, self.u, self.v)))
+
         # *** minimize wrt v ***
             # this time u_hat will have j-th *column* corresponding to \hat{u}_j since u represents users
             sparse_u = sparse.lil_matrix((self.u.shape[0], self.u.shape[0]), dtype=self.u.dtype)
@@ -169,12 +188,15 @@ class ALSSparse:
             v_hat = self.M * sparse_v
             grad_u = _compute_sparse_gradient_vectorized(v_hat, self.X, self.u, self.v)
             
-            # debug
-            print(np.linalg.norm(_compute_sparse_gradient_vectorized(u_hat.T, self.X.T, self.v, self.u)))
+            # debug, grad should be ~0 here
+            # print(np.linalg.norm(_compute_sparse_gradient_vectorized(u_hat.T, self.X.T, self.v, self.u)))
+
             # bookkeeping
             counter += 1
             self.log_stats(grad_u, grad_v, counter)
-            print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
+
+            # debug: checking difference in thetas
+            # print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
 
         end_time = time.time()
         print(f"Estimated average iteration runtime: {(end_time-start_time)/counter}s")
@@ -202,6 +224,7 @@ class ALSSparse:
         self.stats['num_iterations'] = n_iters
         self.stats['grad_u_norm'] =  np.linalg.norm(final_grad)
         self.stats['theta_diff_norm'] = theta_diff
+        self.stats['mse'] = self.function_eval()/self.X.getnnz()
 
 
 def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix)->np.ndarray:
