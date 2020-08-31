@@ -15,13 +15,24 @@ def init_vector(shape, normalize=True):
 
 def average_stats(old_stats, new_run_stats, n):
     for k in new_run_stats:
+        # keep latest function evaluation series
+        if k == 'fun_evals':
+            old_stats[k] = new_run_stats[k]
         if k not in old_stats:
             old_stats[k] = new_run_stats[k]
         else: # running average
             old_stats[k] = 1/n * (new_run_stats[k] + (n-1) * old_stats[k])
     return old_stats
 
-def run_experiment(data: MovieLensDataset, sparse, grad_sensibility=1e-8, num_experiments=10):
+def run_experiment(data: MovieLensDataset, sparse, grad_sensibility=1e-8, num_experiments=10, warmup=2):
+    # optional warmup
+    for _ in range(warmup):
+        u = init_vector(data.n_users, normalize=True)
+        v = init_vector(data.n_movies, normalize=True)
+        args = [u, v, data.dataset()]
+        als = ALSSparse(*args) if sparse else ALS(*args)
+        u, v = als.fit(eps_g=grad_sensibility)
+
     stats = {}
     for i in range(num_experiments):
         u = init_vector(data.n_users, normalize=True)
