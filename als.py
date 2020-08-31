@@ -20,7 +20,7 @@ class ALS:
         self.v = v
         self.X = dataset
         # compute mask from X
-        self.M = (np.ones_like(dataset) * dataset).astype(np.bool)
+        self.M = dataset.astype(np.bool)
 
         self.fun_eval_times = []
         self.fun_evaluations = []
