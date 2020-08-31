@@ -16,6 +16,9 @@ def init_vector(shape, normalize=True):
 
 def average_stats(old_stats, new_run_stats, n):
     for k in new_run_stats:
+        # keep latest function evaluation series
+        if k == 'fun_evals':
+            old_stats[k] = new_run_stats[k]
         if k not in old_stats:
             old_stats[k] = new_run_stats[k]
         else: # running average

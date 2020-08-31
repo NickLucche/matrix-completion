@@ -23,6 +23,7 @@ class ALS:
         self.M = (np.ones_like(dataset) * dataset).astype(np.bool)
 
         self.fun_eval_times = []
+        self.fun_evaluations = []
         self.stats = {}
 
     # TODO: mention all ops are vectorized for efficiency in report leveraging blas
@@ -84,6 +85,7 @@ class ALS:
         start = time.time()
         fun_eval = self.function_eval()
         self.fun_eval_times.append(time.time() - start)
+        self.fun_evaluations.append(fun_eval)
         print(f'[{iteration}]\t\t{fun_eval}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
@@ -97,6 +99,7 @@ class ALS:
         self.stats['grad_u_norm'] =  np.linalg.norm(final_grad)
         self.stats['theta_diff_norm'] = theta_diff
         self.stats['mse'] = self.function_eval()/np.count_nonzero(self.X)
+        self.stats['fun_evals'] = self.fun_evaluations
 
 # TODO: explain numba, no python code here
 @njit
@@ -146,6 +149,7 @@ class ALSSparse:
         self.M = sparse.csr_matrix(dataset, dtype=np.bool)
         
         self.fun_eval_times = []
+        self.fun_evaluations = []
         self.stats = {}
     
     def fit(self, eps_g:float = 1e-8, eps_params:float = 1e-10, max_iter=1000) -> np.ndarray:
@@ -211,6 +215,7 @@ class ALSSparse:
         start = time.time()
         fun_eval = self.function_eval()
         self.fun_eval_times.append(time.time() - start)
+        self.fun_evaluations.append(fun_eval)
         print(f'[{iteration}]\t\t{fun_eval}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
@@ -225,6 +230,7 @@ class ALSSparse:
         self.stats['grad_u_norm'] =  np.linalg.norm(final_grad)
         self.stats['theta_diff_norm'] = theta_diff
         self.stats['mse'] = self.function_eval()/self.X.getnnz()
+        self.stats['fun_evals'] = self.fun_evaluations
 
 
 def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix)->np.ndarray:

@@ -10,6 +10,7 @@ class MovieLensDataset:
         self.path = path
         self.n_users = n_users
         self.n_movies = n_movies
+        self.mode = mode
         # load dataset and build 'augmented' matrix UsersxMovies
         # all args are expected to be >=0 (can contain non-integer ratings tho)
         print(f"Loading MovieLens dataset from {path} with mode {mode}..")
@@ -23,6 +24,62 @@ class MovieLensDataset:
 
     def dataset(self):
         return self.X
+
+    def train_test_split(self, test_size, rnd_seed, min_user_ratings=2, min_movie_ratings=2):
+        """ Split dataset into train-test, minding test entries do appear in training
+            at least `min_user_ratings` time for each user and `min_movie_ratings` 
+            times for each movie. 
+            Return generated test set (same shape as original dataset) and train set. 
+            Latter is obtained by editing dataset in-place to save memory in case of `full` matrix,
+            while a copy is returned in case of `sparse` (changing structure is expensive).
+            Original dataset will equal `test + train`.
+        Args:
+            rnd_seed ([type]): [description]
+            test_size: number of ratings test set will have.
+            min_user_ratings (int, optional): [description]. Defaults to 2.
+            min_movie_ratings (int, optional): [description]. Defaults to 2.
+        """
+        np.random.seed(rnd_seed)
+        # shuffle ratings along axis 0
+        perm = np.random.permutation(self.X.shape[0])
+        test_X = np.zeros(self.X.shape)
+        
+        train_X = (self.X.tolil(copy=True) if self.mode == 'sparse' else self.X)
+
+        def num_entries(x):
+            if isinstance(x, np.ndarray):
+                return np.count_nonzero(x)
+            else:
+                return x.getnnz()
+        def nonzero_indices(x):
+            if isinstance(x, np.ndarray):
+                x = x.reshape(1, -1)
+            _, cols = x.nonzero()
+            return cols
+        inserted, counter = 0, 0
+        while inserted < test_size:
+            # go through shuffled array, re-start from beginning after n_users iterations
+            i = perm[counter % len(perm)]
+            counter += 1
+            # check whether user i gave more `min_user_ratings`
+            if num_entries(train_X[i]) > min_user_ratings:
+                # check whether movie j was given more than `min_movie_ratings` ratings
+                rated_movies = nonzero_indices(train_X[i])
+                for mid in rated_movies:
+                    if num_entries(train_X[:, mid]) > min_movie_ratings:
+                        # insert rating of movie j by user i into test
+                        inserted += 1
+                        test_X[i, mid] = train_X[i, mid]
+
+                        # zero-out train set at that position
+                        train_X[i, mid] = 0.0
+                        break       
+
+        # return train, test
+        if self.mode == 'full':
+            return self.X, test_X
+        elif self.mode == 'sparse':
+            return train_X.tocsr(), sparse.csr_matrix(test_X, dtype=np.float64)       
 
     def _movie_mapping(self, movie_id: str)->int:
         # estabilishes an enumeration mapping from global movieid defined
@@ -101,3 +158,22 @@ class MovieLensDataset:
                 if line_count > 0:
                    movie_names[row[0]] = {'title': row[1], 'genre':row[2] }
         return movie_names       
+
+if __name__ == "__main__":
+    import time
+    m = MovieLensDataset('data/ratings.csv', 610, n_movies=9742, mode='sparse')
+    start = time.time()
+    train, test = m.train_test_split(1000, 7)
+    print("Loading time", time.time()-start)
+    print(train.shape, test.shape)
+    print(np.sum(train), np.sum(test))
+    # print(np.count_nonzero(train), np.count_nonzero(test))
+    print(train.getnnz(), test.getnnz())
+
+    m = MovieLensDataset('data/ratings.csv', 610, n_movies=9742, mode='full')
+    start = time.time()
+    train, test = m.train_test_split(1000, 7)
+    print("Loading time", time.time()-start)
+    print(train.shape, test.shape)
+    print(np.sum(train), np.sum(test))
+    print(np.count_nonzero(train), np.count_nonzero(test))
