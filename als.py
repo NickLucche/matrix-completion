@@ -112,7 +112,7 @@ def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray)->np.ndarray:
 
     minimizer = np.zeros(hat_vect_matrix.shape[0]).reshape(-1, 1).astype(hat_vect_matrix.dtype)
     for i in range(hat_vect_matrix.shape[0]):
-        minimizer[i] = hat_vect_matrix[i, :] @ X[:, i]#.astype(hat_vect_matrix.dtype)
+        minimizer[i] = hat_vect_matrix[i, :] @ X[:, i].astype(hat_vect_matrix.dtype)
         # divide by norm_2 squared
         norm = hat_vect_matrix[i] @ hat_vect_matrix[i] 
         if norm > 1e-16:
@@ -128,7 +128,7 @@ def _compute_gradient_vectorized(hat_vect_matrix: np.ndarray, X: np.ndarray, z:n
     grad_z = np.zeros(z.shape[0]).reshape(-1, 1).astype(z.dtype)
     for i in range(hat_vect_matrix.shape[0]):
         # make sure X it's a col vector otherwise it will broadcast '-' operation
-        grad_z[i] = hat_vect_matrix[i] @ (z[i] * y - X[:, i].reshape(-1, 1)).astype(z.dtype)
+        grad_z[i] = hat_vect_matrix[i] @ (z[i] * y - X[:, i].reshape(-1, 1).astype(z.dtype)).astype(z.dtype)
 
     return grad_z
 

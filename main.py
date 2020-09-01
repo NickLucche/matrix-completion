@@ -74,8 +74,19 @@ def show_movie_recommendations(d: MovieLensDataset):
 def evaluate(u:np.ndarray, v:np.ndarray, test_X, mode:str):
     print(u.shape, v.shape, test_X.shape, mode)
     # compute mask from M
-    a = ALSSparse(u, v, test_X) if mode=='sparse' else ALS(u, v, test_X)
-    print("Test set MSE:", a.function_eval()/ (test_X.getnnz() if mode=='sparse' else np.count_nonzero(test_X)))
+    a = ALSSparse(u, v, test_X) if mode=='sparse' else ALS(u, v, test_X.toarray())
+    print("Test set MSE:", a.function_eval()/ test_X.getnnz() )
+    # def rescale_matrix(x):
+    #     x = x.tolil()
+    #     # X = sparse.lil_matrix(x.shape)
+    #     for i in range(x.shape[0]):
+    #         for j in range(x.shape[1]):
+    #             if x[i, j] != 0:
+    #                 x[i, j] = MovieLensDataset._rescale_back_rating(x[i, j])
+    #     return x
+
+    # M = sparse.csr_matrix(test_X, dtype=np.bool)
+    # print("Test set MSE:", (rescale_matrix(M.multiply(u @ v.T)) - rescale_matrix(test_X)).power(2).sum() )
     
 
 

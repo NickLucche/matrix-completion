@@ -40,9 +40,10 @@ class MovieLensDataset:
             min_movie_ratings (int, optional): [description]. Defaults to 2.
         """
         np.random.seed(rnd_seed)
-        # shuffle ratings along axis 0
+        # virtually shuffle ratings along axis 0 (only change access pattern)
         perm = np.random.permutation(self.X.shape[0])
-        test_X = np.zeros(self.X.shape)
+        # use sparse format for efficiency
+        test_X = sparse.lil_matrix(self.X.shape)
         
         train_X = (self.X.tolil(copy=True) if self.mode == 'sparse' else self.X)
 
@@ -58,7 +59,7 @@ class MovieLensDataset:
             return cols
         inserted, counter = 0, 0
         while inserted < test_size:
-            # go through shuffled array, re-start from beginning after n_users iterations
+            # go through "shuffled" array, re-start from beginning after n_users iterations
             i = perm[counter % len(perm)]
             counter += 1
             # check whether user i gave more `min_user_ratings`
@@ -93,7 +94,8 @@ class MovieLensDataset:
             return self.movie_map[movie_id]
     
     def _load_full(self, csv_file)->np.ndarray:
-        X = np.zeros((self.n_users, self.n_movies)).astype(np.float64) 
+        # use uint8 to save max space
+        X = np.zeros((self.n_users, self.n_movies)).astype(np.uint8) 
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
         for row in csv_reader:
@@ -103,7 +105,8 @@ class MovieLensDataset:
                 # enumerate from 0 instead of 1
                 user_id = int(row[0])-1
                 movie_id = self._movie_mapping(row[1])
-                rating = float(row[2])
+                # rescale ratings from float to integer range
+                rating = MovieLensDataset._rescale_rating(float(row[2]))
                 X[user_id][movie_id] = rating
             line_count += 1
 
@@ -126,7 +129,8 @@ class MovieLensDataset:
                 # enumerate from 0 instead of 1
                 user_id = int(row[0])-1
                 movie_id = self._movie_mapping(row[1])
-                rating = float(row[2])
+                # rescale rating from float to int8 range (save space)
+                rating = MovieLensDataset._rescale_rating(float(row[2]))
 
                 rows.append(user_id)
                 cols.append(movie_id)
@@ -136,7 +140,7 @@ class MovieLensDataset:
         print(f'Processed {line_count} lines.')
         print(f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)")
         # TODO: explain re-scaling trick for float->int (save mem by mapping 4.5->5)
-        return sparse.csr_matrix((data, (rows, cols)), shape=(self.n_users, self.n_movies), dtype=np.float64)
+        return sparse.csr_matrix((data, (rows, cols)), shape=(self.n_users, self.n_movies), dtype=np.uint8)
         
     # Map internal movieid to actual movie title (retrieved from another file)
     def get_movie_info(self, movie_id):
@@ -158,6 +162,22 @@ class MovieLensDataset:
                 if line_count > 0:
                    movie_names[row[0]] = {'title': row[1], 'genre':row[2] }
         return movie_names       
+
+    @staticmethod
+    def _rescale_rating(rating:float)->int:
+        NEW_MAX = 10
+        NEW_MIN = 1
+        new_range = NEW_MAX - NEW_MIN
+        old_range = 5.0 - 0.5
+        return (((rating - .5) * new_range) / old_range) + NEW_MIN
+
+    @staticmethod
+    def _rescale_back_rating(rating)->float:
+        NEW_MAX = 5.0
+        NEW_MIN = 0.5
+        new_range = NEW_MAX - NEW_MIN
+        old_range = 10.0 - 1.
+        return (((rating - 1.) * new_range) / old_range) + NEW_MIN
 
 if __name__ == "__main__":
     import time
