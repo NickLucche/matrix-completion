@@ -10,6 +10,7 @@ class MovieLensDataset:
         self.path = path
         self.n_users = n_users
         self.n_movies = n_movies
+        self.n_ratings = 0
         self.mode = mode
         # load dataset and build 'augmented' matrix UsersxMovies
         # all args are expected to be >=0 (can contain non-integer ratings tho)
@@ -43,7 +44,7 @@ class MovieLensDataset:
         # virtually shuffle ratings along axis 0 (only change access pattern)
         perm = np.random.permutation(self.X.shape[0])
         # use sparse format for efficiency
-        test_X = sparse.lil_matrix(self.X.shape)
+        test_X = sparse.lil_matrix(self.X.shape, dtype=np.uint8)
         
         train_X = (self.X.tolil(copy=True) if self.mode == 'sparse' else self.X)
 
@@ -52,7 +53,7 @@ class MovieLensDataset:
                 return np.count_nonzero(x)
             else:
                 return x.getnnz()
-        def nonzero_indices(x):
+        def nonzero_indices(x): # takes about ~0.2ms
             if isinstance(x, np.ndarray):
                 x = x.reshape(1, -1)
             _, cols = x.nonzero()
@@ -113,6 +114,7 @@ class MovieLensDataset:
         print(f'Processed {line_count} lines.')
         print(f"Augmented dataset of size {X.shape} (users x movies) correctly loaded")
         print(f"Dataset contains {np.count_nonzero(X)} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)")
+        self.n_ratings = line_count-1
         return X
 
     def _load_sparse(self, csv_file)->sparse.csr_matrix: 
@@ -139,6 +141,7 @@ class MovieLensDataset:
 
         print(f'Processed {line_count} lines.')
         print(f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)")
+        self.n_ratings = line_count-1
         # TODO: explain re-scaling trick for float->int (save mem by mapping 4.5->5)
         return sparse.csr_matrix((data, (rows, cols)), shape=(self.n_users, self.n_movies), dtype=np.uint8)
         

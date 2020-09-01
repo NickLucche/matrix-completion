@@ -25,7 +25,9 @@ def average_stats(old_stats, new_run_stats, n):
     return old_stats
 
 def run_experiment(data: MovieLensDataset, sparse: True, grad_sensibility=1e-8, num_experiments=1, warmup=0):
-    trainX, testX = data.train_test_split(1000, 7)
+    # %10 test size
+    test_set_size = data.n_ratings//10
+    trainX, testX = data.train_test_split(test_set_size, 7)
     print(trainX.shape, testX.shape)
     # optional warmup
     for _ in range(warmup):
@@ -50,6 +52,10 @@ def run_experiment(data: MovieLensDataset, sparse: True, grad_sensibility=1e-8, 
     print(json.dumps(stats, sort_keys=True, indent=4))
     with open(f'data/als_{"sparse" if sparse else "full"}_{num_experiments}_runs.json', 'w') as f:
         json.dump(stats, f)
+
+    # free memory before testing
+    del trainX
+    del data
 
     # test on test set
     evaluate(als.u, als.v, testX, "sparse" if sparse else "full")
@@ -122,7 +128,7 @@ if __name__ == "__main__":
     
 
     # TODO: numba version seems slightly faster in full-mode, test on bigger dataset
-    dataset = MovieLensDataset(args.dataset_path, 610, 9742, mode='full')
+    dataset = MovieLensDataset(args.dataset_path, n_users=args.n_users, n_movies=args.n_movies, mode='full')
     
     als = run_experiment(dataset, sparse=False)
     print("Mean Squared error is:", als.function_eval()/np.count_nonzero(dataset.dataset()))
