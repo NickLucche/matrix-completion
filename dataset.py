@@ -1,6 +1,8 @@
 import numpy as np
 import os
 import csv
+import ray
+from parallel_test_train_split import gen_test_set_task, promise_iterator
 
 from scipy import sparse
 
@@ -20,13 +22,13 @@ class MovieLensDataset:
         self.movie_counter = 0
         self.movie_names = None
 
-        with open(path) as csv_file:
+        with open(os.path.join(path,'ratings.csv')) as csv_file:
             self.X = self._load_sparse(csv_file) if mode == 'sparse' else self._load_full(csv_file)
 
     def dataset(self):
         return self.X
 
-    def train_test_split(self, test_size, rnd_seed, min_user_ratings=2, min_movie_ratings=2):
+    def train_test_split(self, test_size, n_workers, rnd_seed=7, min_user_ratings=2, min_movie_ratings=2):
         """ Split dataset into train-test, minding test entries do appear in training
             at least `min_user_ratings` time for each user and `min_movie_ratings` 
             times for each movie. 
@@ -35,53 +37,44 @@ class MovieLensDataset:
             while a copy is returned in case of `sparse` (changing structure is expensive).
             Original dataset will equal `test + train`.
         Args:
-            rnd_seed ([type]): [description]
+            
             test_size: number of ratings test set will have.
             min_user_ratings (int, optional): [description]. Defaults to 2.
             min_movie_ratings (int, optional): [description]. Defaults to 2.
         """
-        np.random.seed(rnd_seed)
-        # virtually shuffle ratings along axis 0 (only change access pattern)
-        perm = np.random.permutation(self.X.shape[0])
+        ray.init(ignore_reinit_error=True)
+        
         # use sparse format for efficiency
         test_X = sparse.lil_matrix(self.X.shape, dtype=np.uint8)
         
         train_X = (self.X.tolil(copy=True) if self.mode == 'sparse' else self.X)
 
-        def num_entries(x):
-            if isinstance(x, np.ndarray):
-                return np.count_nonzero(x)
-            else:
-                return x.getnnz()
-        def nonzero_indices(x): # takes about ~0.2ms
-            if isinstance(x, np.ndarray):
-                x = x.reshape(1, -1)
-            _, cols = x.nonzero()
-            return cols
-        inserted, counter = 0, 0
-        while inserted < test_size:
-            # go through "shuffled" array, re-start from beginning after n_users iterations
-            i = perm[counter % len(perm)]
-            counter += 1
-            # check whether user i gave more `min_user_ratings`
-            if num_entries(train_X[i]) > min_user_ratings:
-                # check whether movie j was given more than `min_movie_ratings` ratings
-                rated_movies = nonzero_indices(train_X[i])
-                for mid in rated_movies:
-                    if num_entries(train_X[:, mid]) > min_movie_ratings:
-                        # insert rating of movie j by user i into test
-                        inserted += 1
-                        test_X[i, mid] = train_X[i, mid]
+        # chunk dim (rows) per worker ~ balanced
+        N = [self.n_users // n_workers] * (n_workers-1)
+        N.append(self.n_users-sum(N))  # last worker gets remaining
 
-                        # zero-out train set at that position
-                        train_X[i, mid] = 0.0
-                        break       
+        # number of elements to obtain per worker
+        M = [test_size // n_workers] * (n_workers-1)
+        M.append(test_size-sum(M))
+
+        # spawn process and feed tasks
+        promises = [gen_test_set_task.remote(train_X[i*n:(i+1)*n, :], m, i*n, rnd_seed) for i, n, m in zip(range(n_workers), N, M) ]
+
+        for (test_block, start_idx), n in zip(promise_iterator(promises), N):
+            print(f"New job finished from start_idx {start_idx}!")
+            test_X[start_idx:start_idx+n, :] = test_block
+
+        # zero-out train set at those position inserted in test set
+        train_X[test_X.nonzero()] = 0
+
+        print("NNZ elems train:",train_X.getnnz() if self.mode=='sparse' else np.count_nonzero(train_X))
+        print("NNZ elems test:", test_X.getnnz())
 
         # return train, test
         if self.mode == 'full':
             return self.X, test_X
         elif self.mode == 'sparse':
-            return train_X.tocsr(), sparse.csr_matrix(test_X, dtype=np.float64)       
+            return train_X.tocsr(), sparse.csr_matrix(test_X, dtype=np.uint8)       
 
     def _movie_mapping(self, movie_id: str)->int:
         # estabilishes an enumeration mapping from global movieid defined
@@ -142,14 +135,14 @@ class MovieLensDataset:
         print(f'Processed {line_count} lines.')
         print(f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)")
         self.n_ratings = line_count-1
-        # TODO: explain re-scaling trick for float->int (save mem by mapping 4.5->5)
+        # TODO: explain re-scaling trick for float->int (save mem by mapping 4.5->5) leads to slower convergence and higher ts error (local)
         return sparse.csr_matrix((data, (rows, cols)), shape=(self.n_users, self.n_movies), dtype=np.uint8)
         
     # Map internal movieid to actual movie title (retrieved from another file)
     def get_movie_info(self, movie_id):
         # load movies names just-in-time
         if self.movie_names is None:
-            self.movie_names = self._load_movies_information('./data/movies.csv')
+            self.movie_names = self._load_movies_information(os.path.join(self.path,'movies.csv'))
 
         # get MovieLens/IMDB movie id
         imdb_movie_id = self.inverse_movie_map[movie_id]
@@ -168,19 +161,11 @@ class MovieLensDataset:
 
     @staticmethod
     def _rescale_rating(rating:float)->int:
-        NEW_MAX = 10
-        NEW_MIN = 1
-        new_range = NEW_MAX - NEW_MIN
-        old_range = 5.0 - 0.5
-        return (((rating - .5) * new_range) / old_range) + NEW_MIN
+        return int(rating * 2)
 
     @staticmethod
     def _rescale_back_rating(rating)->float:
-        NEW_MAX = 5.0
-        NEW_MIN = 0.5
-        new_range = NEW_MAX - NEW_MIN
-        old_range = 10.0 - 1.
-        return (((rating - 1.) * new_range) / old_range) + NEW_MIN
+        return rating / 2.0
 
 if __name__ == "__main__":
     import time

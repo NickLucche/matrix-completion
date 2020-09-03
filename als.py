@@ -102,7 +102,7 @@ class ALS:
         self.stats['fun_evals'] = self.fun_evaluations
 
 # TODO: explain numba, no python code here
-@njit
+@njit(parallel=False)
 def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray)->np.ndarray:
     # TODO: explain why it is efficient in report too (O(mn))
     # minimizer = np.sum(hat_vect_matrix*X.T , axis=1)
@@ -120,7 +120,7 @@ def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray)->np.ndarray:
 
     return minimizer
 
-@njit
+@njit(parallel=False)
 def _compute_gradient_vectorized(hat_vect_matrix: np.ndarray, X: np.ndarray, z:np.ndarray, y:np.ndarray)->np.ndarray:
     # z = z.reshape(-1, 1)
     # grad_z = (hat_vect_matrix * (z @ y.T - X.T)).sum(axis=1)

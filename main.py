@@ -25,8 +25,8 @@ def average_stats(old_stats, new_run_stats, n):
     return old_stats
 
 def run_experiment(data: MovieLensDataset, sparse: True, grad_sensibility=1e-8, num_experiments=1, warmup=0):
-    # %10 test size
-    test_set_size = data.n_ratings//10
+    # %5 test size
+    test_set_size = data.n_ratings//20
     trainX, testX = data.train_test_split(test_set_size, 7)
     print(trainX.shape, testX.shape)
     # optional warmup
@@ -64,14 +64,14 @@ def run_experiment(data: MovieLensDataset, sparse: True, grad_sensibility=1e-8, 
 def show_movie_recommendations(d: MovieLensDataset):
     # sample k random movies already rated by user x in dataset
     movies_already_rated = random.sample(list(d.dataset()[userx].indices), k=5)
-    print(userx, movies_already_rated)
+    # print(userx, movies_already_rated)
     # sample k random movies among all possible (use movie_counter since some movies might have multiple ratings)
     movie_list = random.sample(range(d.movie_counter), k=5)
     movie_ratings = {}
     # format result
     for m_id in movies_already_rated + movie_list:
         mdbid = d.get_movie_info(m_id)
-        # get original rating if present else compute it from factorization
+        # get original (re-mapped) rating if present else compute it from factorization
         rating = d.dataset()[userx, m_id] if m_id in movies_already_rated else float(als.u[userx] * als.v[m_id])
         movie_ratings[str(mdbid)] = {'title': mdbid,
          'rating': f'{rating:.2f}'}
@@ -82,17 +82,9 @@ def evaluate(u:np.ndarray, v:np.ndarray, test_X, mode:str):
     # compute mask from M
     a = ALSSparse(u, v, test_X) if mode=='sparse' else ALS(u, v, test_X.toarray())
     print("Test set MSE:", a.function_eval()/ test_X.getnnz() )
-    # def rescale_matrix(x):
-    #     x = x.tolil()
-    #     # X = sparse.lil_matrix(x.shape)
-    #     for i in range(x.shape[0]):
-    #         for j in range(x.shape[1]):
-    #             if x[i, j] != 0:
-    #                 x[i, j] = MovieLensDataset._rescale_back_rating(x[i, j])
-    #     return x
-
+    
     # M = sparse.csr_matrix(test_X, dtype=np.bool)
-    # print("Test set MSE:", (rescale_matrix(M.multiply(u @ v.T)) - rescale_matrix(test_X)).power(2).sum() )
+    # print("Test set MSE:", ((M.multiply(u @ v.T)/2.) - (test_X.astype(np.float32)/2.)).power(2).sum() )
     
 
 
