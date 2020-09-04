@@ -1,5 +1,4 @@
 from scipy import sparse
-from scipy.sparse import data
 from als import ALS, ALSSparse
 from dataset import MovieLensDataset
 from argparse import ArgumentParser
@@ -7,6 +6,7 @@ import numpy as np
 import json
 import random
 import os
+import scipy
 
 def init_vector(shape, normalize=True):
     z = np.abs(np.random.randn(shape)).reshape(-1, 1).astype(np.float64)
@@ -29,6 +29,14 @@ def run_experiment(data: MovieLensDataset, sparse: True, grad_sensibility=1e-8, 
     test_set_size = data.n_ratings//20
     trainX, testX = data.train_test_split(test_set_size, 7)
     print(trainX.shape, testX.shape)
+    print(f"Saving train and test set to /tmp/ first..")
+    scipy.sparse.save_npz(f'/tmp/testX_{"sparse" if sparse else "full"}.npz', testX.tocsr())
+    if sparse:
+        scipy.sparse.save_npz(f'/tmp/trainX_sparse.npz', trainX) 
+    else:
+        with open("/tmp/trainX_full.npz", 'wb') as f:
+            np.save(f, trainX)
+
     # optional warmup
     for _ in range(warmup):
         u = init_vector(data.n_users, normalize=True)

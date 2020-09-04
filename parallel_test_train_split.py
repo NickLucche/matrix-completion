@@ -59,7 +59,7 @@ def promise_iterator(promises, timeout=1.0):
             yield x
 
         done_work += len(new_results)
-        print(f"{time.time() - start_time}  {done_work}/{total_work}")
+        # print(f"{time.time() - start_time}  {done_work}/{total_work}")
 
 if __name__ == "__main__":
     ray.init()

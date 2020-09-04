@@ -52,10 +52,11 @@ class MovieLensDataset:
         # chunk dim (rows) per worker ~ balanced
         N = [self.n_users // n_workers] * (n_workers-1)
         N.append(self.n_users-sum(N))  # last worker gets remaining
-
+        print("Rows per worker", N)
         # number of elements to obtain per worker
         M = [test_size // n_workers] * (n_workers-1)
         M.append(test_size-sum(M))
+        print("Elements per worker", M)
 
         # spawn process and feed tasks
         promises = [gen_test_set_task.remote(train_X[i*n:(i+1)*n, :], m, i*n, rnd_seed) for i, n, m in zip(range(n_workers), N, M) ]
