@@ -7,6 +7,7 @@ import json
 import random
 import os
 import scipy
+from utils import load_matrix, save_matrix
 
 def init_vector(shape, normalize=True):
     z = np.abs(np.random.randn(shape)).reshape(-1, 1).astype(np.float64)
@@ -25,18 +26,21 @@ def average_stats(old_stats, new_run_stats, n):
     return old_stats
 
 def run_experiment(data: MovieLensDataset, sparse: True, grad_sensibility=1e-8, num_experiments=1, warmup=0):
-    # %5 test size
-    test_set_size = data.n_ratings//20
-    trainX, testX = data.train_test_split(test_set_size, 7)
+    # try to load matrices first
+    try:
+        print("Loading train and test split from /tmp/..")
+        trainX = load_matrix(f'trainX_{"sparse" if sparse else "full"}', sparse)
+        testX = load_matrix(f'testX_{"sparse" if sparse else "full"}', sparse)
+    except:
+        print("Loading failed, generating train-test split now..")
+        # %5 test size
+        test_set_size = data.n_ratings//20
+        trainX, testX = data.train_test_split(test_set_size, 7)
+        print(f"Saving train and test set to /tmp/ first..")
+        save_matrix(f'trainX_{"sparse" if sparse else "full"}', trainX)
+        save_matrix(f'testX_{"sparse" if sparse else "full"}', testX)
+        
     print(trainX.shape, testX.shape)
-    print(f"Saving train and test set to /tmp/ first..")
-    scipy.sparse.save_npz(f'/tmp/testX_{"sparse" if sparse else "full"}.npz', testX.tocsr())
-    if sparse:
-        scipy.sparse.save_npz(f'/tmp/trainX_sparse.npz', trainX) 
-    else:
-        with open("/tmp/trainX_full.npz", 'wb') as f:
-            np.save(f, trainX)
-
     # optional warmup
     for _ in range(warmup):
         u = init_vector(data.n_users, normalize=True)
