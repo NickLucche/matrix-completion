@@ -59,10 +59,16 @@ class MovieLensDataset:
         print("Elements per worker", M)
 
         # spawn process and feed tasks
-        promises = [gen_test_set_task.remote(train_X[i*n:(i+1)*n, :], m, i*n, rnd_seed) for i, n, m in zip(range(n_workers), N, M) ]
+        promises = []
+        indices = [0]
+        for i, n, m in zip(range(n_workers), N, M):
+            trainX_chunk = train_X[indices[i]:indices[i]+n, :]
+            promises.append(gen_test_set_task.remote(trainX_chunk, m, indices[i], rnd_seed))
+            indices.append(indices[i] + n)
 
         for (test_block, start_idx), n in zip(promise_iterator(promises), N):
             print(f"New job finished from start_idx {start_idx}!")
+            print(test_block.shape, start_idx, n)
             test_X[start_idx:start_idx+n, :] = test_block
 
         # zero-out train set at those position inserted in test set
