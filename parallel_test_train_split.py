@@ -22,10 +22,13 @@ def gen_test_set_task(matrix_block: sparse.lil_matrix, n_elements, start_idx, rn
     counter = 0
 
     test_X = sparse.lil_matrix(matrix_block.shape, dtype=np.uint8)
-    
+    start = time.time()
     while inserted < n_elements:
         if counter>0 and counter % 10000 == 0:
             print(inserted,'/', n_elements)
+            now = time.time()
+            print(f"It took {now-start}s")
+            start = now
         # go through "shuffled" array, re-start from beginning after n_users iterations
         row_idx = perm[counter % len(perm)]
         counter += 1

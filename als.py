@@ -167,6 +167,7 @@ class ALSSparse:
         # *** minimize wrt u ***
             # compute v_hat (masked-v) by leveraging sparse representation (t-th *row* will correspond to \hat{v}_t)
             sparse_v = sparse.lil_matrix((self.v.shape[0], self.v.shape[0]), dtype=self.v.dtype)
+            # build a sparse matrix from v then use matrix mul (*) to compute M*v(broadcasted) efficiently
             sparse_v.setdiag(self.v)
             v_hat = self.M * sparse_v
             # compute minimizer wrt u
@@ -234,7 +235,6 @@ class ALSSparse:
 
 
 def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix)->np.ndarray:
-    # TODO: explain elemntwise+sum form
     # compute numerator part of minimizer, this will yield a dense vector (size of u or v)
     minimizer = (hat_vect_matrix.multiply(X)).sum(axis=1)
     # divide by norm squared of masked vector
@@ -247,9 +247,14 @@ def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_
 
 
 def _compute_sparse_gradient_vectorized(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix, z:np.ndarray, y:np.ndarray)->np.ndarray:
-    # exploit product with sparse matrix, tho second term will be dense
     grad_z = (hat_vect_matrix.multiply(z @ y.T - X)).sum(axis=1)
     return grad_z.A
+    # grad_z = np.zeros(z.shape[0]).reshape(-1, 1).astype(z.dtype)
+    # for i in range(hat_vect_matrix.shape[0]):
+    #     # make sure X it's a col vector otherwise it will broadcast '-' operation
+    #     grad_z[i] = hat_vect_matrix[i] @ (z[i] * y - X[:, i].reshape(-1, 1).astype(z.dtype)).astype(z.dtype)
+
+    # return grad_z
 
 if __name__ == "__main__":
     u = np.random.randn(10).astype(np.float32).reshape(-1, 1)
