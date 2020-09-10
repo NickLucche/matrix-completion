@@ -1,6 +1,5 @@
 import numpy as np
 from numba import njit
-from numpy.core.records import ndarray
 from scipy import sparse
 import scipy.sparse as sparse
 from utils import check_close_to_zero
@@ -89,7 +88,9 @@ class ALS:
         print(f'[{iteration}]\t\t{fun_eval}\t\t{np.linalg.norm(grad_u)}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
-        return np.sum((self.u @ self.v.T * self.M - self.X)**2)
+        # avoid computing uv^T directly for saving memory
+        # return np.sum((self.u @ self.v.T * self.M - self.X)**2)
+        return _function_eval_numba(self.X, self.u, self.v, self.M)
 
     def register_stats(self, runtime:float, n_iters:int, final_grad:np.ndarray, theta_diff:float):
         self.stats['avg_iter_time'] = runtime/n_iters
@@ -100,6 +101,13 @@ class ALS:
         self.stats['theta_diff_norm'] = theta_diff
         self.stats['mse'] = self.function_eval()/np.count_nonzero(self.X)
         self.stats['fun_evals'] = self.fun_evaluations
+
+@njit(parallel=False)
+def _function_eval_numba(X:np.ndarray, u:np.ndarray, v:np.ndarray, M:np.ndarray):
+    rows_sum = np.zeros(X.shape[1], dtype=u.dtype).reshape(-1, 1)
+    for i in range(X.shape[0]):
+        rows_sum[i] = (( (u[i].item() * v) * M[i].reshape(-1, 1) - X[i].reshape(-1, 1)) ** 2).sum()
+    return rows_sum.sum() 
 
 # TODO: explain numba, no python code here
 @njit(parallel=False)
@@ -185,9 +193,6 @@ class ALSSparse:
             u_hat = sparse_u * self.M     # note self.u was just minimized above
             # optional: check gradient of v (X to X.T is cheap in sparse matrices, csr->csc)
             grad_v = _compute_sparse_gradient(u_hat.T, self.X_T, self.v, self.u)
-            print(grad_v.shape)
-            grad_z = (u_hat.T.multiply(self.v @ self.u.T - self.X.T)).sum(axis=1)
-            print(np.linalg.norm(grad_v-grad_z))
 
             # compute minimizer wrt v
             self.v = _compute_sparse_minimizer(u_hat.T, self.X.T)
@@ -198,10 +203,6 @@ class ALSSparse:
             sparse_v.setdiag(self.v)
             v_hat = self.M * sparse_v
             grad_u = _compute_sparse_gradient(v_hat, self.X, self.u, self.v)
-
-            grad_z = (v_hat.multiply(self.u @ self.v.T - self.X)).sum(axis=1)
-            print(grad_u.shape)
-            print(np.linalg.norm(grad_u-grad_z))
             
             # debug, grad should be ~0 here
             # print(np.linalg.norm(_compute_sparse_gradient_vectorized(u_hat.T, self.X.T, self.v, self.u)))
@@ -270,9 +271,7 @@ def _compute_sparse_gradient(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_m
     # create difference matrix sparse representation to avoid passing `hat_vect_matrix` as full matrix
     diff_matrix = sparse.csr_matrix((_compute_sparse_difference_matrix(sparse_X_tuple, z, y)), shape=X.shape, dtype=z.dtype)
     
-    m = hat_vect_matrix.tocsr().astype(np.bool)
-    print("Norm-check", np.linalg.norm(diff_matrix.toarray() - m.multiply(z @ y.T - X) ) )
-    print("Norm-check", np.linalg.norm(hat_vect_matrix.multiply(diff_matrix).toarray() - hat_vect_matrix.multiply(z @ y.T - X).toarray() ) )
+    # print("Norm-check", np.linalg.norm(hat_vect_matrix.multiply(diff_matrix).toarray() - hat_vect_matrix.multiply(z @ y.T - X).toarray() ) )
 
     # sum over columns (axis=1)
     return hat_vect_matrix.multiply(diff_matrix).sum(axis=1)

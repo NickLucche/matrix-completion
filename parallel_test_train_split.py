@@ -51,7 +51,7 @@ def gen_test_set_task(matrix_block: sparse.lil_matrix, n_elements, start_idx, rn
     return test_X, start_idx
 
 def promise_iterator(promises, timeout=1.0):
-    start_time = time.time()
+    # start_time = time.time()
     total_work = len(promises)
     done_work = 0
     while len(promises):
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     print(np.sum(X))
 
     n = 100
-    promises = [worker.remote(X[i*n:(i+1)*n, :], 100, i*n) for i in range(4)]
+    promises = [gen_test_set_task.remote(X[i*n:(i+1)*n, :], 100, i*n) for i in range(4)]
     for test_block, start_idx in promise_iterator(promises):
         print(f"New job finished from start_idx {start_idx}!")
         testX[start_idx:start_idx+n, :] = test_block
