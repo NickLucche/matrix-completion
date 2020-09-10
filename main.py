@@ -10,6 +10,7 @@ import scipy
 from utils import load_matrix, save_matrix
 
 def init_vector(shape, normalize=True):
+    # np.random.seed(10)
     z = np.abs(np.random.randn(shape)).reshape(-1, 1).astype(np.float64)
     # u /= np.sum(u)
     return z/np.linalg.norm(z) if normalize else z
@@ -25,7 +26,7 @@ def average_stats(old_stats, new_run_stats, n):
             old_stats[k] = 1/n * (new_run_stats[k] + (n-1) * old_stats[k])
     return old_stats
 
-def run_experiment(data: MovieLensDataset, sparse: True, grad_sensibility=1e-8, num_experiments=1, warmup=0):
+def run_experiment(data: MovieLensDataset, sparse=True, grad_sensibility=1e-8, num_experiments=1, warmup=0):
     # try to load matrices first
     try:
         print("Loading train and test split from /tmp/..")
@@ -106,6 +107,7 @@ if __name__ == "__main__":
     args.add_argument('-s', '--save-path', help='Directory where to save factorization results to', default='./data/')
     args.add_argument('-u', '--n-users', help='Number of users present in the dataset', type=int, required=True)
     args.add_argument('-m', '--n-movies', help='Number of movies present in the dataset', type=int, required=True)
+    args.add_argument('-w', '--n-workers', help='Number of workers used to split dataset into test-train', type=int, default=8)
     args = args.parse_args()
     # TODO: we could use float32 if not for numba
     dataset = MovieLensDataset(args.dataset_path, n_users=args.n_users, n_movies=args.n_movies, mode='sparse')
