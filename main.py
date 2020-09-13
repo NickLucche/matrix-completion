@@ -14,11 +14,11 @@ def init_vector(shape, normalize=True):
     z = np.abs(np.random.randn(shape)).reshape(-1, 1).astype(np.float64)
     # u /= np.sum(u)
     return z/np.linalg.norm(z) if normalize else z
-
+# TODO: store test-set results, store gradients (grad theta) at each iteration, test parallelization
 def average_stats(old_stats, new_run_stats, n):
     for k in new_run_stats:
-        # keep latest function evaluation series
-        if k == 'fun_evals':
+        # keep latest run list
+        if k == 'fun_evals' or k == 'grad_theta':
             old_stats[k] = new_run_stats[k]
         elif k not in old_stats:
             old_stats[k] = new_run_stats[k]
