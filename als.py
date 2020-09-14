@@ -55,6 +55,7 @@ class ALS:
             # this time u_hat will have j-th *column* corresponding to \hat{u}_j since u represents users
             # optional: check gradient of v
             grad_v = _compute_gradient_vectorized(self.M.T, np.asfortranarray(self.X), self.v, self.u)
+            
 
             # TODO: explaing contiguity and trade-off with memory
             self.v = _compute_minimizer(self.u.T, self.M.T, np.asfortranarray(self.X))
@@ -62,9 +63,9 @@ class ALS:
             theta = np.vstack([self.u, self.v])
 
             # compute gradient of u after v was updated (grad_v is zero here)
-            v_hat = self.M * self.v.T
-            grad_u = _compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)
-
+            # v_hat = self.M * self.v.T computed inside
+            grad_u = _compute_gradient_vectorized(self.M, self.X.T, self.u, self.v)
+            
             norm_grad_u = np.linalg.norm(grad_u)
             self.grad_theta.append(norm_grad_u)
             
@@ -131,9 +132,9 @@ def _compute_minimizer(z: np.ndarray, M:np.ndarray, X: np.ndarray) -> np.ndarray
         masked_vector = M[i] * z
         minimizer[i] = masked_vector @ X[:, i].astype(z.dtype)
         # divide by norm_2 squared of hat vector
-        norm = masked_vector @ masked_vector.T
+        norm = (masked_vector @ masked_vector.T).item()
         if norm > 1e-16:
-            minimizer[i] /= norm.item()
+            minimizer[i] /= norm
 
     return minimizer
 
