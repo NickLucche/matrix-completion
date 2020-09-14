@@ -11,7 +11,7 @@ def check_close_to_zero(a, dtype):
 
 def save_matrix(filename:str, M):
     if isinstance(M, np.ndarray):
-        with open(f'/tmp/{filename}.npz', 'wb') as f:
+        with open(f'/tmp/{filename}.npy', 'wb') as f:
             np.save(f, M)
     else:
         scipy.sparse.save_npz(f'/tmp/{filename}.npz', M.tocsr())
@@ -20,6 +20,9 @@ def load_matrix(filename:str, sparse:bool):
     if sparse:
         return scipy.sparse.load_npz(f'/tmp/{filename}.npz')
     else:
-        with open(f'/tmp/{filename}.npz', 'rb') as f:
+        if 'testX' in filename:
+            return scipy.sparse.load_npz(f'/tmp/{filename}.npz')
+            
+        with open(f'/tmp/{filename}.npy', 'rb') as f:
             return np.load(f)
         

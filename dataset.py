@@ -22,7 +22,7 @@ class MovieLensDataset:
         self.movie_counter = 0
         self.movie_names = None
 
-        with open(os.path.join(path,'ratings.csv')) as csv_file:
+        with open(os.path.join(path, 'ratings.csv')) as csv_file:
             self.X = self._load_sparse(csv_file) if mode == 'sparse' else self._load_full(csv_file)
 
     def dataset(self):
@@ -43,10 +43,10 @@ class MovieLensDataset:
             min_movie_ratings (int, optional): [description]. Defaults to 2.
         """
         ray.init(ignore_reinit_error=True)
-        
+
         # use sparse format for efficiency
         test_X = sparse.lil_matrix(self.X.shape, dtype=np.uint8)
-        
+
         train_X = (self.X.tolil(copy=True) if self.mode == 'sparse' else self.X)
 
         # chunk dim (rows) per worker ~ balanced
@@ -81,7 +81,7 @@ class MovieLensDataset:
         if self.mode == 'full':
             return self.X, test_X
         elif self.mode == 'sparse':
-            return train_X.tocsr(), sparse.csr_matrix(test_X, dtype=np.uint8)       
+            return train_X.tocsr(), sparse.csr_matrix(test_X, dtype=np.uint8)
 
     def _movie_mapping(self, movie_id: str)->int:
         # estabilishes an enumeration mapping from global movieid defined
@@ -93,10 +93,10 @@ class MovieLensDataset:
             self.inverse_movie_map[self.movie_counter] = movie_id
             self.movie_counter += 1
             return self.movie_map[movie_id]
-    
+
     def _load_full(self, csv_file)->np.ndarray:
         # use uint8 to save max space
-        X = np.zeros((self.n_users, self.n_movies)).astype(np.uint8) 
+        X = np.zeros((self.n_users, self.n_movies), dtype=np.uint8)
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
         for row in csv_reader:
@@ -117,7 +117,7 @@ class MovieLensDataset:
         self.n_ratings = line_count-1
         return X
 
-    def _load_sparse(self, csv_file)->sparse.csr_matrix: 
+    def _load_sparse(self, csv_file)->sparse.csr_matrix:
         # construct sparse matrix using rows-cols-data format
         rows = [] # row indices
         cols = [] # cols indices
@@ -144,7 +144,7 @@ class MovieLensDataset:
         self.n_ratings = line_count-1
         # TODO: explain re-scaling trick for float->int (save mem by mapping 4.5->5) leads to slower convergence and higher ts error (local)
         return sparse.csr_matrix((data, (rows, cols)), shape=(self.n_users, self.n_movies), dtype=np.uint8)
-        
+
     # Map internal movieid to actual movie title (retrieved from another file)
     def get_movie_info(self, movie_id):
         # load movies names just-in-time
@@ -164,7 +164,7 @@ class MovieLensDataset:
             for line_count, row in enumerate(csv_reader):
                 if line_count > 0:
                    movie_names[row[0]] = {'title': row[1], 'genre':row[2] }
-        return movie_names       
+        return movie_names
 
     @staticmethod
     def _rescale_rating(rating:float)->int:
