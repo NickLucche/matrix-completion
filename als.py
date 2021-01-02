@@ -1,5 +1,5 @@
 import numpy as np
-from numba import njit
+from numba import njit, prange
 from scipy import sparse
 import scipy.sparse as sparse
 from utils import check_close_to_zero
@@ -20,7 +20,7 @@ class ALS:
         self.v = v
         self.X = dataset
         # compute mask from X
-        self.M = dataset.astype(np.bool)
+        self.M = dataset.astype(np.bool_)
 
         self.fun_eval_times = []
         self.fun_evaluations = []
@@ -44,30 +44,28 @@ class ALS:
                 theta - latest_theta) > eps_params and counter < max_iter:
             latest_theta = theta
         # *** minimize wrt u ***
-            # compute v_hat (masked-v) by leveraging operator broadcasting (t-th *row* will correspond to \hat{v}_t) and index-based operation
-            v_hat = self.M * self.v.T
-            # compute 
-            self.u = _compute_minimizer(v_hat, self.X.T)
+            # V_hat (t-th *row* will correspond to \hat{v}_t=M[t]*v), computed inside to save memory
+            # compute minimizer for u
+            self.u = _compute_minimizer(self.v.T, self.M, self.X.T)
 
             # debug, grad should be ~0 here
             # print(np.linalg.norm(_compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)))
 
         # *** minimize wrt v ***
             # this time u_hat will have j-th *column* corresponding to \hat{u}_j since u represents users
-            u_hat = self.M * self.u  # note self.u was just minimized above
             # optional: check gradient of v
-            grad_v = _compute_gradient_vectorized(np.ascontiguousarray(u_hat.T), np.asfortranarray(self.X), self.v,
-                                                  self.u)
-            # compute
+            grad_v = _compute_gradient_vectorized(self.M.T, np.asfortranarray(self.X), self.v, self.u)
+            
+
             # TODO: explaing contiguity and trade-off with memory
-            self.v = _compute_minimizer(np.ascontiguousarray(u_hat.T), np.asfortranarray(self.X))
+            self.v = _compute_minimizer(self.u.T, self.M.T, np.asfortranarray(self.X))
 
             theta = np.vstack([self.u, self.v])
 
             # compute gradient of u after v was updated (grad_v is zero here)
-            v_hat = self.M * self.v.T
-            grad_u = _compute_gradient_vectorized(v_hat, self.X.T, self.u, self.v)
-
+            # v_hat = self.M * self.v.T computed inside
+            grad_u = _compute_gradient_vectorized(self.M, self.X.T, self.u, self.v)
+            
             norm_grad_u = np.linalg.norm(grad_u)
             self.grad_theta.append(norm_grad_u)
             
@@ -120,20 +118,21 @@ def _function_eval_numba(X: np.ndarray, u: np.ndarray, v: np.ndarray, M: np.ndar
     return rows_sum.sum()
 
 
-# TODO: explain numba, no python code here
 @njit(parallel=False)
-def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray) -> np.ndarray:
+def _compute_minimizer(z: np.ndarray, M:np.ndarray, X: np.ndarray) -> np.ndarray:
     # TODO: explain why it is efficient in report too (O(mn))
     # minimizer = np.sum(hat_vect_matrix*X.T , axis=1)
     # vect_of_norms = (hat_vect_matrix * hat_vect_matrix).sum(axis=1)
     # vect_of_norms[vect_of_norms<1e-8] = 1
     # return (minimizer/vect_of_norms).reshape(-1, 1)
 
-    minimizer = np.zeros(hat_vect_matrix.shape[0]).reshape(-1, 1).astype(hat_vect_matrix.dtype)
-    for i in range(hat_vect_matrix.shape[0]):
-        minimizer[i] = hat_vect_matrix[i, :] @ X[:, i].astype(hat_vect_matrix.dtype)
-        # divide by norm_2 squared
-        norm = hat_vect_matrix[i] @ hat_vect_matrix[i]
+    minimizer = np.zeros(X.shape[1]).reshape(-1, 1).astype(z.dtype)
+    for i in prange(X.shape[1]):
+        # row vector (i-th row of V_hat/U_hat)
+        masked_vector = M[i] * z
+        minimizer[i] = masked_vector @ X[:, i].astype(z.dtype)
+        # divide by norm_2 squared of hat vector
+        norm = (masked_vector @ masked_vector.T).item()
         if norm > 1e-16:
             minimizer[i] /= norm
 
@@ -141,15 +140,16 @@ def _compute_minimizer(hat_vect_matrix: np.ndarray, X: np.ndarray) -> np.ndarray
 
 
 @njit(parallel=False)
-def _compute_gradient_vectorized(hat_vect_matrix: np.ndarray, X: np.ndarray, z: np.ndarray,
+def _compute_gradient_vectorized(M: np.ndarray, X: np.ndarray, z: np.ndarray,
                                  y: np.ndarray) -> np.ndarray:
     # z = z.reshape(-1, 1)
     # grad_z = (hat_vect_matrix * (z @ y.T - X.T)).sum(axis=1)
     # return grad_z.reshape(-1, 1)
     grad_z = np.zeros(z.shape[0]).reshape(-1, 1).astype(z.dtype)
-    for i in range(hat_vect_matrix.shape[0]):
+    for i in prange(z.shape[0]):
+        hat_vector = M[i] * y.T
         # make sure X it's a col vector otherwise it will broadcast '-' operation
-        grad_z[i] = hat_vect_matrix[i] @ (z[i] * y - X[:, i].reshape(-1, 1).astype(z.dtype)).astype(z.dtype)
+        grad_z[i] = hat_vector @ (z[i] * y - X[:, i].reshape(-1, 1).astype(z.dtype)).astype(z.dtype)
 
     return grad_z
 
