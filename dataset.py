@@ -1,8 +1,7 @@
 import numpy as np
 import os
 import csv
-import ray
-from parallel_test_train_split import gen_test_set_task, promise_iterator
+from tqdm import tqdm
 
 from scipy import sparse
 
@@ -34,12 +33,45 @@ class MovieLensDataset:
             prior knowledge on distributions of ratings in dataset: GroupLens ensures that
             `All users selected had rated at least 20 movies` therefore we can sample from 
             dataset without worrying too much.
+            Train modified in-place (same shape, zero-out extracted entries), test is returned by copy.
             Mostly useful for quick train-test split on dataset with known properties.
         Args:
             test_size (int): number of ratings test set will have.
         """
-        # FIXME:
-        pass
+        # avoid starting always from first index or you'll get all movies with low id
+        test_idx = np.random.permutation(self.X.shape[0])
+        # get a rnd number of ratings (for some random movie) from each of the selected users
+        mask = np.zeros(self.X.shape, dtype=np.bool)  # bool for efficiency
+        print("Extracting test set..")
+        def nonzero_indices(x):
+            if isinstance(x, np.ndarray):
+                x = x.reshape(1, -1)
+            _, cols = x.nonzero()
+            return cols
+        for i in tqdm(test_idx):
+            if test_size <= 0:
+                break
+            # compute how many ratings to extract (test_size can be greater than n_users)
+            num_ratings = np.random.randint(10, 15)
+            if test_size - num_ratings < 0:
+                num_ratings = test_size
+            test_size -= num_ratings
+            # select only among non-zero ratings
+            ratings_to_get = np.random.choice(nonzero_indices(self.X[i]),
+                                              size=num_ratings,
+                                              replace=False)
+            mask[i][ratings_to_get] = True
+
+        # get test set ratings
+        if self.mode == 'sparse':
+            m = sparse.csr_matrix(mask)
+            test_X = self.X.multiply(m)
+            self.X = self.X.multiply(sparse.csr_matrix(~mask))
+        else:
+            test_X = self.X * mask
+            # zero-out extracted entries from train set
+            self.X = self.X * (~mask)
+        return self.X, test_X
 
     def train_test_split(self,
                          test_size,
@@ -62,6 +94,8 @@ class MovieLensDataset:
             min_movie_ratings (int, optional): How many ratings must (at least) a movie have received
             to be inserted in test set. Defaults to 2.
         """
+        import ray
+        from parallel_test_train_split import gen_test_set_task, promise_iterator
         ray.init(ignore_reinit_error=True)
 
         # use sparse format for efficiency
