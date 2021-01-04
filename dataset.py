@@ -232,7 +232,7 @@ class MovieLensDataset:
             f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)"
         )
         self.n_ratings = line_count - 1
-        # TODO: explain re-scaling trick for float->int (save mem by mapping 4.5->5) leads to slower convergence and higher ts error (local)
+        
         return sparse.csr_matrix((data, (rows, cols)),
                                  shape=(self.n_users, self.n_movies),
                                  dtype=np.uint8)

@@ -27,8 +27,6 @@ class ALS:
         self.grad_theta = []
         self.stats = {}
 
-    # TODO: mention all ops are vectorized for efficiency in report leveraging blas
-    # TODO: specify cost of each operation
     def fit(self, eps_g: float = 1e-8, eps_params: float = 1e-10, max_iter=1000) -> np.ndarray:
         grad_u = np.ones(self.u.shape[0]) * np.inf
         grad_v = np.ones(self.v.shape[0]) * np.inf
@@ -80,6 +78,7 @@ class ALS:
             # print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
 
         end_time = time.time()
+        print('-'*80)
         print(f"Estimated average iteration runtime: {(end_time - start_time) / counter}s")
         self.register_stats(end_time - start_time, counter, grad_u, np.linalg.norm(theta - latest_theta))
         print(f"Estimated average function evaluation times: {self.stats['avg_fun_eval_time']}")
@@ -120,8 +119,7 @@ def _function_eval_numba(X: np.ndarray, u: np.ndarray, v: np.ndarray, M: np.ndar
 
 @njit(parallel=False)
 def _compute_minimizer(z: np.ndarray, M:np.ndarray, X: np.ndarray) -> np.ndarray:
-    # TODO: explain why it is efficient in report too (O(mn))
-    # minimizer = np.sum(hat_vect_matrix*X.T , axis=1)
+    # minimizer = np.sum(hat_vect_matrix*X.T , axis=1)   <--- explicit but memory inefficient form
     # vect_of_norms = (hat_vect_matrix * hat_vect_matrix).sum(axis=1)
     # vect_of_norms[vect_of_norms<1e-8] = 1
     # return (minimizer/vect_of_norms).reshape(-1, 1)
@@ -143,7 +141,7 @@ def _compute_minimizer(z: np.ndarray, M:np.ndarray, X: np.ndarray) -> np.ndarray
 def _compute_gradient_vectorized(M: np.ndarray, X: np.ndarray, z: np.ndarray,
                                  y: np.ndarray) -> np.ndarray:
     # z = z.reshape(-1, 1)
-    # grad_z = (hat_vect_matrix * (z @ y.T - X.T)).sum(axis=1)
+    # grad_z = (hat_vect_matrix * (z @ y.T - X.T)).sum(axis=1)  <--- explicit but memory inefficient form
     # return grad_z.reshape(-1, 1)
     grad_z = np.zeros(z.shape[0]).reshape(-1, 1).astype(z.dtype)
     for i in prange(z.shape[0]):
@@ -160,7 +158,7 @@ class ALSSparse:
         """Alternating Least Squares using scipy-based sparse vectors implementation. 
         Args:
             u (np.ndarray): (mx1) users (column) vector
-            v (np.ndarray): (vx1) items (column) vector
+            v (np.ndarray): (nx1) items (column) vector
             dataset (np.ndarray): (mxn) sparse dataset of ratings.
         """
         self.u = u
@@ -193,7 +191,7 @@ class ALSSparse:
         # *** minimize wrt u ***
             # compute v_hat (masked-v) by leveraging sparse representation (t-th *row* will correspond to \hat{v}_t)
             sparse_v = sparse.lil_matrix((self.v.shape[0], self.v.shape[0]), dtype=self.v.dtype)
-            # build a sparse matrix from v then use matrix mul (*) to compute M*v(broadcasted) efficiently
+            # build a sparse matrix from v then use matrix mul (*) to compute M \odot V (elemtnwise product, broadcasted) efficiently
             sparse_v.setdiag(self.v)
             v_hat = self.M * sparse_v
             # compute minimizer wrt u
@@ -235,6 +233,7 @@ class ALSSparse:
             # print(np.linalg.norm(theta), np.linalg.norm(latest_theta))
 
         end_time = time.time()
+        print('-'*80)
         print(f"Estimated average iteration runtime: {(end_time - start_time) / counter}s")
         self.register_stats(end_time - start_time, counter, grad_u, np.linalg.norm(theta - latest_theta))
 
@@ -251,9 +250,9 @@ class ALSSparse:
         print(f'[{iteration}]\t\t{fun_eval}\t\t{norm_grad_u}\t\t{np.linalg.norm(grad_v)}')
 
     def function_eval(self):
-        # vectorized form requires more memory (compute uv^T)
+        # vectorized form requires more memory (compute `A=uv^T`)
         # return (self.M.multiply(self.u @ self.v.T) - self.X).power(2).sum()
-        # efficient sparse computation since there's no need to multiply by M (uv^T-X avoided nonzero elems by construction) 
+        # efficient sparse computation since there's no need to multiply by M (uv^T-X avoids nonzero elems by construction) 
         sparse_X_tuple = (self.X.data, *self.X.nonzero())
         differences, _ = _compute_sparse_difference_matrix(sparse_X_tuple, self.u, self.v)
         return (np.array(differences, dtype=self.u.dtype) ** 2).sum()
@@ -275,7 +274,7 @@ def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_
     minimizer = (hat_vect_matrix.multiply(X)).sum(axis=1)
     # divide by norm squared of masked vector
     vector_of_norms = (hat_vect_matrix.multiply(hat_vect_matrix)).sum(axis=1)
-    # if some norm is 0 numerator will be 0 too
+    # if some norm is 0 numerator will be 0 too (avoid 0/0)
     vector_of_norms[vector_of_norms < 1e-8] = 1
     minimizer = minimizer / vector_of_norms
     # return np.ndarray representation
@@ -284,17 +283,17 @@ def _compute_sparse_minimizer(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_
 
 def _compute_sparse_gradient(hat_vect_matrix: sparse.csr_matrix, X: sparse.csr_matrix, z: np.ndarray,
                              y: np.ndarray) -> np.ndarray:
-    # grad_z = (hat_vect_matrix.multiply(z @ y.T - X)).sum(axis=1)
+    # grad_z = (hat_vect_matrix.multiply(z @ y.T - X)).sum(axis=1) <-- compressed but memory inefficient (`A`=z @ y.T is dense) implementation
     # return grad_z.A
-    # sparse matrix will be represented by data, rows, cols indices 
+    # sparse matrix are represented by data, rows, cols indices 
     sparse_X_tuple = (X.data, *X.nonzero())
-    # create difference matrix sparse representation to avoid passing `hat_vect_matrix` as full matrix
+    # create difference matrix sparse representation to avoid passing `hat_vect_matrix` as full dense matrix
     diff_matrix = sparse.csr_matrix((_compute_sparse_difference_matrix(sparse_X_tuple, z, y)), shape=X.shape,
                                     dtype=z.dtype)
 
     # print("Norm-check", np.linalg.norm(hat_vect_matrix.multiply(diff_matrix).toarray() - hat_vect_matrix.multiply(z @ y.T - X).toarray() ) )
 
-    # sum over columns (axis=1)
+    # sum over rows (axis=1)
     return hat_vect_matrix.multiply(diff_matrix).sum(axis=1)
 
 

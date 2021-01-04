@@ -14,7 +14,7 @@ def init_vector(shape, normalize=True):
     z = np.abs(np.random.randn(shape)).reshape(-1, 1).astype(np.float64)
     # u /= np.sum(u)
     return z/np.linalg.norm(z) if normalize else z
-# TODO: store test-set results, store gradients (grad theta) at each iteration, test parallelization
+
 def average_stats(old_stats, new_run_stats, n):
     for k in new_run_stats:
         # keep latest run list
@@ -41,7 +41,7 @@ def run_experiment(data: MovieLensDataset, sparse=True, grad_sensibility=1e-8, n
         save_matrix(f'trainX_{"sparse" if sparse else "full"}', trainX)
         save_matrix(f'testX_{"sparse" if sparse else "full"}', testX)
         
-    print(trainX.shape, testX.shape)
+    # print(trainX.shape, testX.shape)
     # optional warmup
     for _ in range(warmup):
         u = init_vector(data.n_users, normalize=True)
@@ -62,9 +62,9 @@ def run_experiment(data: MovieLensDataset, sparse=True, grad_sensibility=1e-8, n
         stats = average_stats(stats, als.stats, i+1)
     # save results
     print("Saving results..")
-    print(json.dumps(stats, sort_keys=True, indent=4))
+    # print(json.dumps(stats, sort_keys=True, indent=4))
     with open(f'data/als_{"sparse" if sparse else "full"}_{num_experiments}_runs.json', 'w') as f:
-        json.dump(stats, f)
+        json.dump(stats, f, indent=4)
 
     # free memory before testing
     del trainX
@@ -108,12 +108,12 @@ if __name__ == "__main__":
     args.add_argument('-u', '--n-users', help='Number of users present in the dataset', type=int, required=True)
     args.add_argument('-m', '--n-movies', help='Number of movies present in the dataset', type=int, required=True)
     args.add_argument('-w', '--n-workers', help='Number of workers used to split dataset into test-train', type=int, default=8)
+    args.add_argument('-v', '--verbose', help='Show some recommendations and additional output', default=False, action='store_true')
     args = args.parse_args()
-    # TODO: we could use float32 if not for numba
+    
     dataset = MovieLensDataset(args.dataset_path, n_users=args.n_users, n_movies=args.n_movies, mode='sparse')
 
-    # initialize u, v TODO: INIT FUNDAMENTAL NOTE: `np.abs` TODO: FORGETTING NP.ABS INIT LEADS TO MUCH SLOWER CONVERGENCE (SHOW) 
-    
+    # another init method
     # for i in range(dataset.dataset().shape[1]):
     #     movie_i_ratings = dataset.dataset()[:, i]
     #     v[i] = movie_i_ratings[movie_i_ratings>0].mean()
@@ -123,17 +123,17 @@ if __name__ == "__main__":
 
     # divide sum of errors on each element by number of elems on which sum is computed
     print("Mean Squared error is:", als.function_eval()/dataset.dataset().getnnz())
-    
-    # show some recommendations
-    userx = random.randint(0, dataset.n_users)
-    print(f"Showing some of the proposed recommendation for user {userx}..")
-    show_movie_recommendations(dataset)
-    print(f"Storing vectors u, v to disk {args.save_path}..")
-    np.save(os.path.join(args.save_path, 'sparse_U.npy'), als.u)
-    np.save(os.path.join(args.save_path, 'sparse_V.npy'), als.v)
-    
 
-    # TODO: numba version seems slightly faster in full-mode, test on bigger dataset
+    # show some recommendations (optional)
+    if args.verbose:
+        userx = random.randint(0, dataset.n_users)
+        print(f"Showing some of the proposed recommendation for user {userx}..")
+        show_movie_recommendations(dataset)
+        print(f"Storing vectors u, v to disk {args.save_path}..")
+        np.save(os.path.join(args.save_path, 'sparse_U.npy'), als.u)
+        np.save(os.path.join(args.save_path, 'sparse_V.npy'), als.v)
+    
+    # dense mode
     dataset = MovieLensDataset(args.dataset_path, n_users=args.n_users, n_movies=args.n_movies, mode='full')
     
     als = run_experiment(dataset, sparse=False)
