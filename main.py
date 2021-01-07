@@ -6,14 +6,17 @@ import numpy as np
 import json
 import random
 import os
-import scipy
+import time
 from utils import load_matrix, save_matrix
+from datetime import datetime
+
 
 def init_vector(shape, normalize=True):
     # np.random.seed(10)
     z = np.abs(np.random.randn(shape)).reshape(-1, 1).astype(np.float64)
     # u /= np.sum(u)
-    return z/np.linalg.norm(z) if normalize else z
+    return z / np.linalg.norm(z) if normalize else z
+
 
 def average_stats(old_stats, new_run_stats, n):
     for k in new_run_stats:
@@ -22,25 +25,32 @@ def average_stats(old_stats, new_run_stats, n):
             old_stats[k] = new_run_stats[k]
         elif k not in old_stats:
             old_stats[k] = new_run_stats[k]
-        else: # running average
-            old_stats[k] = 1/n * (new_run_stats[k] + (n-1) * old_stats[k])
+        else:  # running average
+            old_stats[k] = 1 / n * (new_run_stats[k] + (n - 1) * old_stats[k])
     return old_stats
 
-def run_experiment(data: MovieLensDataset, sparse=True, grad_sensibility=1e-8, num_experiments=1, warmup=0):
+
+def run_experiment(data: MovieLensDataset,
+                   sparse=True,
+                   grad_sensibility=1e-8,
+                   num_experiments=1,
+                   warmup=0):
+    date = datetime.now().strftime("%d/%m/%Y-%H:%M:%S")
     # try to load matrices first
     try:
         print("Loading train and test split from /tmp/..")
-        trainX = load_matrix(f'trainX_{"sparse" if sparse else "full"}', sparse)
+        trainX = load_matrix(f'trainX_{"sparse" if sparse else "full"}',
+                             sparse)
         testX = load_matrix(f'testX_{"sparse" if sparse else "full"}', sparse)
     except:
         print("Loading failed, generating train-test split now..")
         # %5 test size
-        test_set_size = data.n_ratings//20
+        test_set_size = data.n_ratings // 20
         trainX, testX = data.train_test_split(test_set_size, 7)
         print(f"Saving train and test set to /tmp/ first..")
         save_matrix(f'trainX_{"sparse" if sparse else "full"}', trainX)
         save_matrix(f'testX_{"sparse" if sparse else "full"}', testX)
-        
+
     # print(trainX.shape, testX.shape)
     # optional warmup
     for _ in range(warmup):
@@ -51,6 +61,7 @@ def run_experiment(data: MovieLensDataset, sparse=True, grad_sensibility=1e-8, n
         u, v = als.fit(eps_g=grad_sensibility)
 
     stats = {}
+    start = time.time()
     for i in range(num_experiments):
         u = init_vector(data.n_users, normalize=True)
         v = init_vector(data.n_movies, normalize=True)
@@ -59,20 +70,35 @@ def run_experiment(data: MovieLensDataset, sparse=True, grad_sensibility=1e-8, n
         # run Alternating Least Squares algorithm
         u, v = als.fit(eps_g=grad_sensibility)
         # average results
-        stats = average_stats(stats, als.stats, i+1)
-    # save results
-    print("Saving results..")
-    # print(json.dumps(stats, sort_keys=True, indent=4))
-    with open(f'data/als_{"sparse" if sparse else "full"}_{num_experiments}_runs.json', 'w') as f:
-        json.dump(stats, f, indent=4)
+        stats = average_stats(stats, als.stats, i + 1)
+    end = time.time()
+    # additional context info non depending from experiment results
+    stats['number_of_ratings'] = trainX.getnnz(
+    ) if sparse else np.count_nonzero(trainX)
+    stats['dataset_path'] = data.path
+    stats['grad_sensibility'] = grad_sensibility
+    stats['theta_diff_sensibility'] = 1e-10
+    stats['num_experiments'] = num_experiments
+    stats['warmup_cycles'] = warmup
+    stats['experiments_total_runtime'] = end - start
+    stats['date'] = date
 
     # free memory before testing
     del trainX
     del data
 
     # test on test set
-    evaluate(als.u, als.v, testX, "sparse" if sparse else "full")
+    test_mse = evaluate(als.u, als.v, testX, "sparse" if sparse else "full")
+
+    stats['test_mse'] = test_mse
+    # save results
+    print("Saving results..")
+    with open(f'data/als_{"sparse" if sparse else "full"}_{date}.json',
+              'w') as f:
+        json.dump(stats, f, indent=4)
+
     return als
+
 
 def show_movie_recommendations(d: MovieLensDataset):
     # sample k random movies already rated by user x in dataset
@@ -85,59 +111,94 @@ def show_movie_recommendations(d: MovieLensDataset):
     for m_id in movies_already_rated + movie_list:
         mdbid = d.get_movie_info(m_id)
         # get original (re-mapped) rating if present else compute it from factorization
-        rating = d.dataset()[userx, m_id] if m_id in movies_already_rated else float(als.u[userx] * als.v[m_id])
-        movie_ratings[str(mdbid)] = {'title': mdbid,
-         'rating': f'{rating:.2f}'}
+        rating = d.dataset()[userx,
+                             m_id] if m_id in movies_already_rated else float(
+                                 als.u[userx] * als.v[m_id])
+        movie_ratings[str(mdbid)] = {'title': mdbid, 'rating': f'{rating:.2f}'}
     print(json.dumps(movie_ratings, sort_keys=False, indent=4))
 
-def evaluate(u:np.ndarray, v:np.ndarray, test_X, mode:str):
+
+def evaluate(u: np.ndarray, v: np.ndarray, test_X, mode: str):
     print(u.shape, v.shape, test_X.shape, mode)
     # compute mask from M
-    a = ALSSparse(u, v, test_X) if mode=='sparse' else ALS(u, v, test_X.toarray())
-    print("Test set MSE:", a.function_eval()/ test_X.getnnz() )
-    
+    a = ALSSparse(u, v, test_X) if mode == 'sparse' else ALS(
+        u, v, test_X.toarray())
+    mse = a.function_eval() / test_X.getnnz()
+    print("Test set MSE:", mse)
+    return mse
     # M = sparse.csr_matrix(test_X, dtype=np.bool)
     # print("Test set MSE:", ((M.multiply(u @ v.T)/2.) - (test_X.astype(np.float32)/2.)).power(2).sum() )
-    
 
 
 if __name__ == "__main__":
     args = ArgumentParser()
-    args.add_argument('-d', '--dataset-path', help='Absolute path of the csv dataset to load', required=True)
-    args.add_argument('-s', '--save-path', help='Directory where to save factorization results to', default='./data/')
-    args.add_argument('-u', '--n-users', help='Number of users present in the dataset', type=int, required=True)
-    args.add_argument('-m', '--n-movies', help='Number of movies present in the dataset', type=int, required=True)
-    args.add_argument('-w', '--n-workers', help='Number of workers used to split dataset into test-train', type=int, default=8)
-    args.add_argument('-v', '--verbose', help='Show some recommendations and additional output', default=False, action='store_true')
+    args.add_argument('-d',
+                      '--dataset-path',
+                      help='Absolute path of the csv dataset to load',
+                      required=True)
+    args.add_argument('-s',
+                      '--save-path',
+                      help='Directory where to save factorization results to',
+                      default='./data/')
+    args.add_argument('-u',
+                      '--n-users',
+                      help='Number of users present in the dataset',
+                      type=int,
+                      required=True)
+    args.add_argument('-m',
+                      '--n-movies',
+                      help='Number of movies present in the dataset',
+                      type=int,
+                      required=True)
+    args.add_argument(
+        '-w',
+        '--n-workers',
+        help='Number of workers used to split dataset into test-train',
+        type=int,
+        default=8)
+    args.add_argument('-v',
+                      '--verbose',
+                      help='Show some recommendations and additional output',
+                      default=False,
+                      action='store_true')
     args = args.parse_args()
-    
-    dataset = MovieLensDataset(args.dataset_path, n_users=args.n_users, n_movies=args.n_movies, mode='sparse')
+
+    dataset = MovieLensDataset(args.dataset_path,
+                               n_users=args.n_users,
+                               n_movies=args.n_movies,
+                               mode='sparse')
 
     # another init method
     # for i in range(dataset.dataset().shape[1]):
     #     movie_i_ratings = dataset.dataset()[:, i]
     #     v[i] = movie_i_ratings[movie_i_ratings>0].mean()
-    
+
     # run Alternating Least Squares algorithm
     als = run_experiment(dataset, sparse=True)
 
     # divide sum of errors on each element by number of elems on which sum is computed
-    print("Mean Squared error is:", als.function_eval()/dataset.dataset().getnnz())
+    print("Mean Squared error is:",
+          als.function_eval() / dataset.dataset().getnnz())
 
     # show some recommendations (optional)
     if args.verbose:
         userx = random.randint(0, dataset.n_users)
-        print(f"Showing some of the proposed recommendation for user {userx}..")
+        print(
+            f"Showing some of the proposed recommendation for user {userx}..")
         show_movie_recommendations(dataset)
         print(f"Storing vectors u, v to disk {args.save_path}..")
         np.save(os.path.join(args.save_path, 'sparse_U.npy'), als.u)
         np.save(os.path.join(args.save_path, 'sparse_V.npy'), als.v)
-    
+
     # dense mode
-    dataset = MovieLensDataset(args.dataset_path, n_users=args.n_users, n_movies=args.n_movies, mode='full')
-    
+    dataset = MovieLensDataset(args.dataset_path,
+                               n_users=args.n_users,
+                               n_movies=args.n_movies,
+                               mode='full')
+
     als = run_experiment(dataset, sparse=False)
-    print("Mean Squared error is:", als.function_eval()/np.count_nonzero(dataset.dataset()))
+    print("Mean Squared error is:",
+          als.function_eval() / np.count_nonzero(dataset.dataset()))
 
     print(f"Storing vectors u, v to disk {args.save_path}..")
     np.save(os.path.join(args.save_path, 'full_U.npy'), als.u)
