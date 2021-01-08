@@ -35,7 +35,7 @@ def run_experiment(data: MovieLensDataset,
                    grad_sensibility=1e-8,
                    num_experiments=1,
                    warmup=0):
-    date = datetime.now().strftime("%d/%m/%Y-%H:%M:%S")
+    date = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
     # try to load matrices first
     try:
         print("Loading train and test split from /tmp/..")
@@ -120,7 +120,6 @@ def show_movie_recommendations(d: MovieLensDataset):
 
 def evaluate(u: np.ndarray, v: np.ndarray, test_X, mode: str):
     print(u.shape, v.shape, test_X.shape, mode)
-    # compute mask from M
     a = ALSSparse(u, v, test_X) if mode == 'sparse' else ALS(
         u, v, test_X.toarray())
     mse = a.function_eval() / test_X.getnnz()
@@ -177,8 +176,8 @@ if __name__ == "__main__":
     als = run_experiment(dataset, sparse=True)
 
     # divide sum of errors on each element by number of elems on which sum is computed
-    print("Mean Squared error is:",
-          als.function_eval() / dataset.dataset().getnnz())
+    # print("Mean Squared error is:",
+    #       als.function_eval() / dataset.dataset().getnnz()) divide by train size
 
     # show some recommendations (optional)
     if args.verbose:

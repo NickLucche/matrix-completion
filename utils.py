@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 import os
+import csv
 
 def check_close_to_zero(a, dtype):
     if (dtype == np.float32):
@@ -25,4 +26,14 @@ def load_matrix(filename:str, sparse:bool):
             
         with open(f'/tmp/{filename}.npy', 'rb') as f:
             return np.load(f)
-        
+
+def sparse_matrix_to_csv(filename: str, X: scipy.sparse.csr_matrix):
+    data, rows, cols = X.data, *X.nonzero()
+    with open(filename, mode='w') as file:
+        file_matrix = csv.writer(file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        for rating, user_id, movie_id in zip(data, rows, cols):
+            # TODO: uint8 scaled already?
+            file_matrix.writerow([user_id, movie_id, rating])
+
+
+
