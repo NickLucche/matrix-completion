@@ -22,7 +22,10 @@ def average_stats(old_stats, new_run_stats, n):
     for k in new_run_stats:
         # store all runs list to compute mean/var
         if k == 'fun_evals' or k == 'grad_theta':
-            old_stats[k] = {str(n): new_run_stats[k]}
+            if k not in old_stats:
+                old_stats[k] = {str(n): new_run_stats[k]}
+            else:
+                old_stats[k][str(n)] = new_run_stats[k]
         elif k not in old_stats:
             old_stats[k] = new_run_stats[k]
         else:  # running average
