@@ -43,16 +43,18 @@ class MovieLensDataset:
         # get a rnd number of ratings (for some random movie) from each of the selected users
         mask = np.zeros(self.X.shape, dtype=np.bool)  # bool for efficiency
         print("Extracting test set..")
+
         def nonzero_indices(x):
             if isinstance(x, np.ndarray):
                 x = x.reshape(1, -1)
             _, cols = x.nonzero()
             return cols
+
         for i in tqdm(test_idx):
             if test_size <= 0:
                 break
             # compute how many ratings to extract (test_size can be greater than n_users)
-            num_ratings = np.random.randint(10, 15)
+            num_ratings = 10  #np.random.randint(10, 15)
             if test_size - num_ratings < 0:
                 num_ratings = test_size
             test_size -= num_ratings
@@ -71,6 +73,7 @@ class MovieLensDataset:
             test_X = self.X * mask
             # zero-out extracted entries from train set
             self.X = self.X * (~mask)
+            test_X = sparse.lil_matrix(test_X, dtype=np.uint8)
         return self.X, test_X
 
     def train_test_split(self,
@@ -119,8 +122,12 @@ class MovieLensDataset:
         for i, n, m in zip(range(n_workers), N, M):
             trainX_chunk = train_X[indices[i]:indices[i] + n, :]
             promises.append(
-                gen_test_set_task.remote(trainX_chunk, m, indices[i],
-                                         rnd_seed))
+                gen_test_set_task.remote(trainX_chunk,
+                                         m,
+                                         indices[i],
+                                         rnd_seed,
+                                         min_user_ratings=min_user_ratings,
+                                         min_movie_ratings=min_movie_ratings))
             indices.append(indices[i] + n)
 
         for (test_block, start_idx), n in zip(promise_iterator(promises), N):
@@ -208,12 +215,14 @@ class MovieLensDataset:
 
         self.n_users = len(np.unique(rows))
         self.n_movies = len(np.unique(cols))
-        print(f'Processed {line_count} lines. {self.n_users} users x {self.n_movies} movies.')
+        print(
+            f'Processed {line_count} lines. {self.n_users} users x {self.n_movies} movies.'
+        )
         print(
             f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)"
         )
         self.n_ratings = line_count - 1
-        
+
         return sparse.csr_matrix((data, (rows, cols)),
                                  shape=(self.n_users, self.n_movies),
                                  dtype=np.uint8)
