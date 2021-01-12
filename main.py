@@ -35,7 +35,7 @@ def run_experiment(data: MovieLensDataset,
                    grad_sensibility=1e-8,
                    num_experiments=1,
                    warmup=0):
-    date = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
+    date = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     # try to load matrices first
     try:
         print("Loading train and test split from /tmp/..")
@@ -139,16 +139,16 @@ if __name__ == "__main__":
                       '--save-path',
                       help='Directory where to save factorization results to',
                       default='./data/')
-    args.add_argument('-u',
-                      '--n-users',
-                      help='Number of users present in the dataset',
-                      type=int,
-                      required=True)
-    args.add_argument('-m',
-                      '--n-movies',
-                      help='Number of movies present in the dataset',
-                      type=int,
-                      required=True)
+    # args.add_argument('-u',
+    #                   '--n-users',
+    #                   help='Number of users present in the dataset',
+    #                   type=int,
+    #                   required=True)
+    # args.add_argument('-m',
+    #                   '--n-movies',
+    #                   help='Number of movies present in the dataset',
+    #                   type=int,
+    #                   required=True)
     args.add_argument(
         '-w',
         '--n-workers',
@@ -163,8 +163,6 @@ if __name__ == "__main__":
     args = args.parse_args()
 
     dataset = MovieLensDataset(args.dataset_path,
-                               n_users=args.n_users,
-                               n_movies=args.n_movies,
                                mode='sparse')
 
     # another init method
@@ -191,8 +189,6 @@ if __name__ == "__main__":
 
     # dense mode
     dataset = MovieLensDataset(args.dataset_path,
-                               n_users=args.n_users,
-                               n_movies=args.n_movies,
                                mode='full')
 
     als = run_experiment(dataset, sparse=False)

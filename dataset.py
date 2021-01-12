@@ -7,10 +7,10 @@ from scipy import sparse
 
 
 class MovieLensDataset:
-    def __init__(self, path: str, n_users, n_movies, mode: str = 'sparse'):
+    def __init__(self, path: str, mode: str = 'sparse'):
         self.path = path
-        self.n_users = n_users
-        self.n_movies = n_movies
+        self.n_users = None
+        self.n_movies = None
         self.n_ratings = 0
         self.mode = mode
         # load dataset and build 'augmented' matrix UsersxMovies
@@ -170,31 +170,9 @@ class MovieLensDataset:
             np.ndarray: Dataset in matrix form, where X[i, j] can be read as (rescaled uint8)
             rating user `i` gave to movie `j`.
         """
-        # use uint8 to save max space
-        X = np.zeros((self.n_users, self.n_movies), dtype=np.uint8)
-        csv_reader = csv.reader(csv_file, delimiter=',')
-        line_count = 0
-        for row in csv_reader:
-            if line_count == 0:
-                print(f'Column names are {", ".join(row)}')
-            else:
-                # enumerate from 0 instead of 1
-                user_id = int(row[0]) - 1
-                movie_id = self._movie_mapping(row[1])
-                # rescale ratings from float to integer range
-                rating = MovieLensDataset._rescale_rating(float(row[2]))
-                X[user_id][movie_id] = rating
-            line_count += 1
-
-        print(f'Processed {line_count} lines.')
-        print(
-            f"Augmented dataset of size {X.shape} (users x movies) correctly loaded"
-        )
-        print(
-            f"Dataset contains {np.count_nonzero(X)} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)"
-        )
-        self.n_ratings = line_count - 1
-        return X
+        # load it as sparse then get dense representation
+        X = self._load_sparse(csv_file)
+        return X.A
 
     def _load_sparse(self, csv_file) -> sparse.csr_matrix:
         """ Method for loading dataset in `full-matrix` mode, leveraging sparse
@@ -213,6 +191,7 @@ class MovieLensDataset:
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
         for row in csv_reader:
+            # expect first row to contain column names
             if line_count == 0:
                 print(f'Column names are {", ".join(row)}')
             else:
@@ -227,7 +206,9 @@ class MovieLensDataset:
                 data.append(rating)
             line_count += 1
 
-        print(f'Processed {line_count} lines.')
+        self.n_users = len(np.unique(rows))
+        self.n_movies = len(np.unique(cols))
+        print(f'Processed {line_count} lines. {self.n_users} users x {self.n_movies} movies.')
         print(
             f"Dataset contains {line_count-1} ratings ({(line_count-1)/(self.n_movies*self.n_users)*100}% matrix density)"
         )
