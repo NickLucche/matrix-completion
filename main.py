@@ -50,8 +50,8 @@ def run_experiment(data: MovieLensDataset,
         print("Loading failed, generating train-test split now..")
         # %5 test size
         test_set_size = data.n_ratings // 20
-        trainX, testX = data.train_test_split(test_set_size, workers)
-        # trainX, testX = data.train_test_split_simple(test_set_size)
+        # trainX, testX = data.train_test_split(test_set_size, workers)
+        trainX, testX = data.train_test_split_simple(test_set_size)
         print(f"Saving train and test set to /tmp/ first..")
         save_matrix(f'trainX_{"sparse" if sparse else "full"}', trainX)
         save_matrix(f'testX_{"sparse" if sparse else "full"}', testX)
