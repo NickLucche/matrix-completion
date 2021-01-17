@@ -203,8 +203,10 @@ if __name__ == "__main__":
             f"Showing some of the proposed recommendation for user {userx}..")
         show_movie_recommendations(dataset)
         print(f"Storing vectors u, v to disk {args.save_path}..")
-        np.save(os.path.join(args.save_path, 'sparse_U.npy'), als.u)
-        np.save(os.path.join(args.save_path, 'sparse_V.npy'), als.v)
+
+    # store latest feature vectors
+    np.save(os.path.join(args.save_path, 'sparse_U.npy'), als.u)
+    np.save(os.path.join(args.save_path, 'sparse_V.npy'), als.v)
 
     # dense mode
     dataset = MovieLensDataset(args.dataset_path, mode='full')

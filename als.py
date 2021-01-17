@@ -38,6 +38,7 @@ class ALS:
         start_time = time.time()
 
         # stopping condition: only check grad_u here since grad_v will be 0 from latest update 
+        # FIXME: norm here uses too much memory (weird)
         while norm_grad_u > eps_g and np.linalg.norm(
                 theta - latest_theta) > eps_params and counter < max_iter:
             latest_theta = theta
