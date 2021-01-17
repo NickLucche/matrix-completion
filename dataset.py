@@ -38,10 +38,11 @@ class MovieLensDataset:
         Args:
             test_size (int): number of ratings test set will have.
         """
-        # avoid starting always from first index or you'll get all movies with low id
+        # avoid starting always from first index or you'll get all users with low id
         test_idx = np.random.permutation(self.X.shape[0])
         # get a rnd number of ratings (for some random movie) from each of the selected users
-        mask = np.zeros(self.X.shape, dtype=np.bool)  # bool for efficiency
+        test_X = sparse.lil_matrix(self.X.shape, dtype=np.uint8) 
+        train_X = self.X.tolil() if self.mode == 'sparse' else self.X
         print("Extracting test set..")
 
         def nonzero_indices(x):
@@ -50,7 +51,7 @@ class MovieLensDataset:
             _, cols = x.nonzero()
             return cols
 
-        for i in tqdm(test_idx):
+        for i in test_idx:
             if test_size <= 0:
                 break
             # compute how many ratings to extract (test_size can be greater than n_users)
@@ -59,21 +60,18 @@ class MovieLensDataset:
                 num_ratings = test_size
             test_size -= num_ratings
             # select only among non-zero ratings
-            ratings_to_get = np.random.choice(nonzero_indices(self.X[i]),
+            ratings_to_get = np.random.choice(nonzero_indices(train_X[i]),
                                               size=num_ratings,
                                               replace=False)
-            mask[i][ratings_to_get] = True
+            test_X[i, ratings_to_get] = train_X[i, ratings_to_get]
+            # zero-out train
+            train_X[i, ratings_to_get] = 0
 
         # get test set ratings
         if self.mode == 'sparse':
-            m = sparse.csr_matrix(mask)
-            test_X = self.X.multiply(m)
-            self.X = self.X.multiply(sparse.csr_matrix(~mask))
-        else:
-            test_X = self.X * mask
-            # zero-out extracted entries from train set
-            self.X = self.X * (~mask)
-            test_X = sparse.lil_matrix(test_X, dtype=np.uint8)
+            self.X = train_X.tocsr()
+            test_X = test_X.tocsr()
+
         return self.X, test_X
 
     def train_test_split(self,
@@ -268,7 +266,7 @@ class MovieLensDataset:
 
 if __name__ == "__main__":
     import time
-    m = MovieLensDataset('data/ratings.csv', 610, n_movies=9742, mode='sparse')
+    m = MovieLensDataset('data/ratings.csv', mode='sparse')
     start = time.time()
     train, test = m.train_test_split(1000, 7)
     print("Loading time", time.time() - start)
