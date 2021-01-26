@@ -41,7 +41,7 @@ class MovieLensDataset:
         # avoid starting always from first index or you'll get all users with low id
         test_idx = np.random.permutation(self.X.shape[0])
         # get a rnd number of ratings (for some random movie) from each of the selected users
-        test_X = sparse.lil_matrix(self.X.shape, dtype=np.uint8) 
+        test_X = sparse.lil_matrix(self.X.shape, dtype=np.uint8)
         train_X = self.X.tolil() if self.mode == 'sparse' else self.X
         print("Extracting test set..")
 
@@ -262,6 +262,29 @@ class MovieLensDataset:
     @staticmethod
     def _rescale_back_rating(rating) -> float:
         return rating / 2.0
+
+    def to_csv(self, filename: str, X: sparse.csr_matrix):
+        """ Dump csr sparse matrix to csv file restoring original MovieLens format.
+        Args:
+            filename (str): 
+            X (scipy.sparse.csr_matrix): Matrix of ratings to dump.
+        """
+
+        data, rows, cols = X.data, *X.nonzero()
+        with open(filename, mode='w') as file:
+            file_matrix = csv.writer(file,
+                                     delimiter=',',
+                                     quotechar='"',
+                                     quoting=csv.QUOTE_MINIMAL)
+            file_matrix.writerow(['UserId', 'MovieId', 'Rating'])
+            for rating, user_id, movie_id in zip(data, rows, cols):
+                # user_id start from 1 in movielens
+                user_id += 1
+                # restore ratings to their original scale
+                rating = self._rescale_back_rating(rating)
+                # restore movie id to MovieLens system
+                movie_id = self.inverse_movie_map[movie_id]
+                file_matrix.writerow([user_id, movie_id, rating])
 
 
 if __name__ == "__main__":
