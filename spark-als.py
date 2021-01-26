@@ -1,7 +1,9 @@
+from datetime import datetime
 from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
 from pyspark import SparkContext
 import numpy as np
 from als import ALSSparse
+import time, json
 
 from dataset import MovieLensDataset
 from utils import load_matrix, save_matrix, sparse_matrix_to_csv
@@ -21,15 +23,11 @@ if __name__ == "__main__":
                       '--dataset-path',
                       help='Absolute path of the csv dataset to load',
                       required=False)
-    args.add_argument('-u',
-                      '--n-users',
-                      help='Number of users present in the dataset',
+    args.add_argument('-e',
+                      '--n-experiments',
+                      help='Number of experiments to run',
                       type=int,
-                      required=False)
-    args.add_argument('-m',
-                      '--n-movies',
-                      help='Number of movies present in the dataset',
-                      type=int,
+                      default=1,
                       required=False)
     args.add_argument('-i',
                       '--n-iterations',
@@ -66,50 +64,61 @@ if __name__ == "__main__":
         save_matrix(f'testX_sparse', testX)
 
     # train matrix to csv
-    print("Storing train matrix to csv..")
+    print("Storing train/test matrix to csv..")
     sparse_matrix_to_csv('/tmp/trainX.csv', trainX)
+
     # testX = testX.toarray()
+    print("Reading train matrix from csv..")
     data = sc.textFile('/tmp/trainX.csv')
-    ratings = data.map(lambda l: l.split(','))\
-        .map(lambda l: Rating(int(l[0]), int(l[1]), float(l[2])))
+    runtimes = []
+    mses = []
+    for exp_no in range(args.n_experiments):
+        ratings = data.map(lambda l: l.split(','))\
+            .map(lambda l: Rating(int(l[0]), int(l[1]), float(l[2])))
 
-    # Build the recommendation model using Alternating Least Squares
-    rank = 1
-    # do this otherwise ALS crashes <.<
-    sc.setCheckpointDir('/tmp/')
-    print("Running ALS..")
-    model = ALS.train(ratings,
-                      rank,
-                      args.n_iterations,
-                      lambda_=0.0,
-                      nonnegative=args.non_negative,
-                      seed=SEED)
+        # Build the recommendation model using Alternating Least Squares
+        rank = 1
+        # do this otherwise ALS crashes <.<
+        sc.setCheckpointDir('/tmp/')
+        print("Running ALS..")
+        start = time.time()
+        model = ALS.train(ratings,
+                        rank,
+                        args.n_iterations,
+                        lambda_=0.0,
+                        nonnegative=args.non_negative,
+                        seed=SEED)
+        runtimes.append(time.time()-start)
+        print(f"Runtime: {runtimes[-1]}s")
+        # get u, v user and items vectors
+        pf = model.productFeatures()
+        v = np.matrix(np.asarray(pf.values().collect()).astype(np.float64))
+        # print('V:', v.shape, np.linalg.norm(v), v.max(), v.min())
 
-    # get u, v user and items vectors
-    pf = model.productFeatures()
-    v = np.matrix(np.asarray(pf.values().collect()).astype(np.float64))
-    print('V:', v.shape, np.linalg.norm(v), v.max(), v.min())
+        pf = model.userFeatures()
+        u = np.matrix(np.asarray(pf.values().collect()).astype(np.float64))
+        # print('U:', u.shape, np.linalg.norm(u), u.max(), u.min())
 
-    pf = model.userFeatures()
-    u = np.matrix(np.asarray(pf.values().collect()).astype(np.float64))
-    print('U:', u.shape, np.linalg.norm(u), u.max(), u.min())
+        # keep evaluation schema fixed wrt other experiments
+        mse = evaluate(u, v, testX, 'sparse')
+        mses.append(mse)
+    print("Mean MSE:", sum(mses)/args.n_experiments)
+    print("Mean Runtime:", sum(runtimes)/args.n_experiments)
+    with open(f'./data/pyspark_als_{args.n_experiments}.json', 'w') as f:
+        json.dump({'mse': mses, 'runtime': runtimes}, f)
+        # testX = testX.toarray()
+        # sparse_matrix_to_csv('/tmp/testX.csv', testX)
+        # data = sc.textFile('/tmp/testX.csv')
+        # ratings = data.map(lambda l: l.split(','))\
+        #     .map(lambda l: Rating(int(l[0]), int(l[1]), float(l[2])))
 
-    # keep evaluation schema fixed wrt other experiments
-    mse = evaluate(u, v, testX, 'sparse')
-
-    sparse_matrix_to_csv('/tmp/testX.csv', testX)
-    # testX = testX.toarray()
-    data = sc.textFile('/tmp/testX.csv')
-    ratings = data.map(lambda l: l.split(','))\
-        .map(lambda l: Rating(int(l[0]), int(l[1]), float(l[2])))
-
-    testdata = ratings.map(lambda p: (p[0], p[1]))
-    predictions = model.predictAll(testdata).map(lambda r:
-                                                 ((r[0], r[1]), r[2]))
-    ratesAndPreds = ratings.map(lambda r: ((r[0], r[1]), r[2])).join(
-        predictions)
-    MSE = ratesAndPreds.map(lambda r: (r[1][0] - r[1][1])**2).mean()
-    print("Mean Squared Error = " + str(MSE))
+        # testdata = ratings.map(lambda p: (p[0], p[1]))
+        # predictions = model.predictAll(testdata).map(lambda r:
+        #                                             ((r[0], r[1]), r[2]))
+        # ratesAndPreds = ratings.map(lambda r: ((r[0], r[1]), r[2])).join(
+        #     predictions)
+        # MSE = ratesAndPreds.map(lambda r: (r[1][0] - r[1][1])**2).mean()
+        # print("Mean Squared Error = " + str(MSE))
 
     # compare with what i did so far
     # dataset = MovieLensDataset('/tmp/', n_users=args.n_users, n_movies=args.n_movies, mode='sparse')
