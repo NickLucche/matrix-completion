@@ -7,7 +7,10 @@ from scipy import sparse
 
 
 class MovieLensDataset:
-    def __init__(self, path: str, mode: str = 'sparse'):
+    def __init__(self,
+                 path: str,
+                 mode: str = 'sparse',
+                 load_from_file: bool = False):
         self.path = path
         self.n_users = None
         self.n_movies = None
@@ -21,7 +24,9 @@ class MovieLensDataset:
         self.movie_counter = 0
         self.movie_names = None
 
-        with open(os.path.join(path, 'ratings.csv')) as csv_file:
+        filepath = path if load_from_file else os.path.join(
+            path, 'ratings.csv')
+        with open(filepath) as csv_file:
             self.X = self._load_sparse(
                 csv_file) if mode == 'sparse' else self._load_full(csv_file)
 

@@ -26,13 +26,13 @@ if __name__ == "__main__":
     args.add_argument('-lb',
                       '--lower-bound',
                       help='Vector u,v lower bound constraint',
-                      type=int,
+                      type=float,
                       default=-20.0,
                       required=False)
     args.add_argument('-ub',
                       '--upper-bound',
                       help='Vector u,v upper bound constraint',
-                      type=int,
+                      type=float,
                       default=20.0,
                       required=False)
     args.add_argument(
@@ -51,24 +51,25 @@ if __name__ == "__main__":
     args = args.parse_args()
 
     dataset = MovieLensDataset(args.dataset_path, mode='sparse')
-    try:
-        print("Loading train and test split from /tmp/..")
-        trainX = load_matrix(f'trainX_sparse', True)
-        testX = load_matrix(f'testX_sparse', True)
-    except:
-        print("Loading failed, generating train-test split now..")
-        # %5 test size
-        test_set_size = dataset.n_ratings // 20
-        # trainX, testX = dataset.train_test_split_simple(test_set_size)
-        trainX, testX = dataset.train_test_split(test_set_size, args.n_workers)
-        print(f"Saving train and test set to /tmp/ first..")
-        save_matrix(f'trainX_sparse', trainX)
-        save_matrix(f'testX_sparse', testX)
+    # try:
+    #     print("Loading train and test split from /tmp/..")
+    #     trainX = load_matrix(f'trainX_sparse', True)
+    #     testX = load_matrix(f'testX_sparse', True)
+    # except:
+    #     print("Loading failed, generating train-test split now..")
+    #     # %5 test size
+    #     test_set_size = dataset.n_ratings // 20
+    #     # trainX, testX = dataset.train_test_split_simple(test_set_size)
+    #     trainX, testX = dataset.train_test_split(test_set_size, args.n_workers)
+    #     print(f"Saving train and test set to /tmp/ first..")
+    #     save_matrix(f'trainX_sparse', trainX)
+    #     save_matrix(f'testX_sparse', testX)
+    trainX = dataset.X
 
     # train matrix to csv
     # TODO: trainX retains original shape, dumped dataset does not (it shrinks on reload)
     # n_users and movies (shape) must be kept constant (make sure each movie has at least 2 ratings..)
-    
+
     print("Storing train matrix to csv restoring to original format..")
     # dataset.to_csv('/tmp/ratings.csv', trainX)
     # dataset = MovieLensDataset('/tmp/', mode='sparse')
@@ -108,12 +109,15 @@ if __name__ == "__main__":
     elapsed = time.time() - start
     print(f'Optimization took {elapsed}s')
     # get u and v vectors
-    u_arr = np.array([u[i].X for i in range(dataset.n_users)])
-    v_arr = np.array([v[i].X for i in range(dataset.n_movies)])
+    u_arr = np.array([u[i].X for i in range(dataset.n_users)], dtype=np.float64)
+    v_arr = np.array([v[i].X for i in range(dataset.n_movies)], dtype=np.float64)
     print('shapes', u_arr.shape, v_arr.shape)
+    # store latest feature vectors
+    np.save('./data/gurobi2_U.npy', u_arr)
+    np.save('./data/gurobi2_V.npy', v_arr)
     # keep evaluation schema fixed wrt other experiments
     train_mse = evaluate(u_arr, v_arr, trainX, 'sparse')
-    mse = evaluate(u_arr, v_arr, testX, 'sparse')
+    # mse = evaluate(u_arr, v_arr, testX, 'sparse')
 
     als = ALSSparse(u=u_arr, v=v_arr, dataset=trainX)
     fun_eval = als.function_eval()
