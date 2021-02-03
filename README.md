@@ -8,8 +8,11 @@ Although in practical situations you're more likely to be in need of a k-rank ap
 # Usage
 ---
 Experiments can be run by executing the `main.py` as in `python main.py -d data/ -s /tmp`; convergence should be reached in 40+ iterations on the provided 100k ratings dataset with default parameters (grad sensibility of `1e-8`). More info on allowed arguments with `python main.py --help`.
+
 The script will first execute the sparse version of the algorithm, optionally print some recommendation for a random user (arg `-v`, useful to show inference), followed by the dense version execution (only if `--dense` option is passed).  
 Resulting factorization vectors `u, v` will be stored in the directory specified by the save argument `-s`.
+
+Mind intermediate results such as train-test splits are saved to `/tmp` for saving up time between multiple trials; make sure to remove those `*.npy/npz` files when testing out execution on a different dataset. 
 
 
 # Structure
