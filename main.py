@@ -172,6 +172,10 @@ if __name__ == "__main__":
         help='Number of workers used to split dataset into test-train',
         type=int,
         default=8)
+    args.add_argument('--dense',
+                      help='Also runs dense implementation of ALS',
+                      default=False,
+                      action='store_true')
     args.add_argument('-v',
                       '--verbose',
                       help='Show some recommendations and additional output',
@@ -194,32 +198,31 @@ if __name__ == "__main__":
                          warmup=args.warmup,
                          workers=args.n_workers)
 
-    # divide sum of errors on each element by number of elems on which sum is computed
-
     # show some recommendations (optional)
     if args.verbose:
         userx = random.randint(0, dataset.n_users)
         print(
             f"Showing some of the proposed recommendation for user {userx}..")
         show_movie_recommendations(dataset)
-        print(f"Storing vectors u, v to disk {args.save_path}..")
 
+    print(f"Storing vectors u, v to disk {args.save_path}..")
     # store latest feature vectors
     np.save(os.path.join(args.save_path, 'sparse_U.npy'), als.u)
     np.save(os.path.join(args.save_path, 'sparse_V.npy'), als.v)
 
     # dense mode
-    dataset = MovieLensDataset(args.dataset_path, mode='full')
+    if args.dense:
+        dataset = MovieLensDataset(args.dataset_path, mode='full')
 
-    als = run_experiment(dataset,
-                         sparse=False,
-                         grad_sensibility=args.grad_sensibility,
-                         num_experiments=args.n_experiments,
-                         warmup=args.warmup,
-                         workers=args.n_workers)
-    # print("Mean Squared error is:",
-    #       als.function_eval() / np.count_nonzero(dataset.dataset()))
+        als = run_experiment(dataset,
+                             sparse=False,
+                             grad_sensibility=args.grad_sensibility,
+                             num_experiments=args.n_experiments,
+                             warmup=args.warmup,
+                             workers=args.n_workers)
+        # print("Mean Squared error is:",
+        #       als.function_eval() / np.count_nonzero(dataset.dataset()))
 
-    print(f"Storing vectors u, v to disk {args.save_path}..")
-    np.save(os.path.join(args.save_path, 'full_U.npy'), als.u)
-    np.save(os.path.join(args.save_path, 'full_V.npy'), als.v)
+        print(f"Storing vectors u, v to disk {args.save_path}..")
+        np.save(os.path.join(args.save_path, 'full_U.npy'), als.u)
+        np.save(os.path.join(args.save_path, 'full_V.npy'), als.v)
