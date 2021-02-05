@@ -36,6 +36,7 @@ def average_stats(old_stats, new_run_stats, n):
 def run_experiment(data: MovieLensDataset,
                    sparse=True,
                    grad_sensibility=1e-8,
+                   param_sensibility=1e-16,
                    num_experiments=1,
                    warmup=0,
                    workers=8):
@@ -73,7 +74,7 @@ def run_experiment(data: MovieLensDataset,
         args = [u, v, trainX]
         als = ALSSparse(*args) if sparse else ALS(*args)
         # run Alternating Least Squares algorithm
-        u, v = als.fit(eps_g=grad_sensibility)
+        u, v = als.fit(eps_g=grad_sensibility, eps_params=param_sensibility)
         # average results
         stats = average_stats(stats, als.stats, i + 1)
     end = time.time()
@@ -82,6 +83,7 @@ def run_experiment(data: MovieLensDataset,
     ) if sparse else np.count_nonzero(trainX)
     stats['dataset_path'] = data.path
     stats['grad_sensibility'] = grad_sensibility
+    stats['param_sensibility'] = param_sensibility
     stats['theta_diff_sensibility'] = 1e-10
     stats['num_experiments'] = num_experiments
     stats['warmup_cycles'] = warmup
@@ -132,11 +134,8 @@ def evaluate(u: np.ndarray, v: np.ndarray, test_X, mode: str):
     mse = a.function_eval() / test_X.getnnz()
     print("Test set MSE:", mse)
     return mse
-    # M = sparse.csr_matrix(test_X, dtype=np.bool)
-    # print("Test set MSE:", ((M.multiply(u @ v.T)/2.) - (test_X.astype(np.float32)/2.)).power(2).sum() )
 
 
-# TODO: setup for experiments
 if __name__ == "__main__":
     args = ArgumentParser()
     args.add_argument('-d',
@@ -167,6 +166,14 @@ if __name__ == "__main__":
         default=1e-8,
         required=False)
     args.add_argument(
+        '-p',
+        '--param-sensibility',
+        help=
+        'Sensibility of the minimum change in parameter theta between two consecutives iterations',
+        type=float,
+        default=1e-16,
+        required=False)
+    args.add_argument(
         '-w',
         '--n-workers',
         help='Number of workers used to split dataset into test-train',
@@ -194,6 +201,7 @@ if __name__ == "__main__":
     als = run_experiment(dataset,
                          sparse=True,
                          grad_sensibility=args.grad_sensibility,
+                         param_sensibility=args.param_sensibility,
                          num_experiments=args.n_experiments,
                          warmup=args.warmup,
                          workers=args.n_workers)
@@ -217,12 +225,11 @@ if __name__ == "__main__":
         als = run_experiment(dataset,
                              sparse=False,
                              grad_sensibility=args.grad_sensibility,
+                             param_sensibility=args.param_sensibility,
                              num_experiments=args.n_experiments,
                              warmup=args.warmup,
                              workers=args.n_workers)
-        # print("Mean Squared error is:",
-        #       als.function_eval() / np.count_nonzero(dataset.dataset()))
-
+       
         print(f"Storing vectors u, v to disk {args.save_path}..")
         np.save(os.path.join(args.save_path, 'full_U.npy'), als.u)
         np.save(os.path.join(args.save_path, 'full_V.npy'), als.v)
