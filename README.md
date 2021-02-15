@@ -8,7 +8,6 @@ Experiments validated superior performances wrt other frameworks (BFGS from `sci
 
 ![Data growth scaling](/assets/datagrows.png)
 ![SparseVDense](/assets/sparsevdense_bars.png)
-![Convergence](/assets/fun_evals.png)
 
 
 
