@@ -4,11 +4,10 @@ This repo contains the implementation of the Alternating Least Squares algorithm
 Context of the work is that of Collaborative Filtering, so we're looking to "fill gaps in data" by leveraging latent information obtainable through low-rank factorization.
 Although in practical situations you're more likely to be in need of a k-rank approximation, the work here has a mainly educational purpose.
 
-Experiments validated superior performances wrt other frameworks (BFGS from `scipy.optimize` and the ALS implementation from `Apache Spark`) in optimizing the squared error function for rank-1 factorization of a given sparse data matrix X. Optimization loop has a cost linearly dependant on number of non-zero entries in X (ratings) while the number of iterations performed does not depend on size of data (like GD), so one can expect a consistent behavior in solving problems with 100k or 20M ratings (fixing gradient sensibility and distance from optimum/"initialization scheme").
+Experiments validated superior performances wrt other frameworks (BFGS from `scipy.optimize` and the ALS implementation from `Apache Spark`) in optimizing the squared error function for rank-1 factorization of a given sparse data matrix X. Optimization loop has a cost linearly dependant on number of non-zero entries in X (ratings) while the number of iterations performed does not depend on size of data (like GD), so one can expect a consistent behavior in solving problems with 100k or 20M ratings (fixing gradient sensibility and distance from optimum/~"initialization scheme").
 
 ![Data growth scaling](/assets/datagrows.png)
 ![SparseVDense](/assets/sparsevdense_bars.png)
-![Convergence](/assets/fun_evals.png)
 
 
 
